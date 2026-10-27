@@ -1,0 +1,8 @@
+fastapi>=0.110
+anyio>=4  # async file I/O for streaming uploads (transitive via starlette, pinned here since imported directly)
+uvicorn[standard]>=0.29
+python-multipart>=0.0.9
+httpx>=0.27
+SQLAlchemy>=2.0
+itsdangerous>=2.1
+psycopg2-binary>=2.9  # Postgres driver (Railway); SQLite needs no driver

@@ -1,0 +1,37 @@
+# Personal genealogical data — never commit (real names, places, FamilySearch IDs)
+data/
+output/
+
+# Local credentials — never commit (FamilySearch username/password)
+.env
+.env.local
+*.cred
+# ...but the placeholder template IS committed
+!.env.example
+
+# Python environment / caches
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Web app (SPA)
+node_modules/
+web/node_modules/
+web/dist/
+web/public/third-party-licenses.txt
+*.local
+*.tsbuildinfo
+
+# API runtime data store — uploaded GEDCOMs + parsed trees (sensitive, per-user)
+api_store/
+family-tree-backup*/
+
+# Local tooling + editor config
+.claude/
+.vscode/
+.idea/
+
+# OS cruft
+Thumbs.db
+.DS_Store

@@ -1,0 +1,23 @@
+name: family-tree
+
+services:
+  app:
+    build: .
+    image: family-tree:local
+    ports:
+      - "127.0.0.1:${APP_PORT:-8000}:8000"
+    environment:
+      APP_DATA_DIR: /app/api_store
+      DATABASE_URL: ${DATABASE_URL:-sqlite:////app/api_store/app.db}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      SESSION_HTTPS_ONLY: ${SESSION_HTTPS_ONLY:-0}
+      INVITE_CODE: ${INVITE_CODE:-}
+      OPENROUTER_API_KEY: ${OPENROUTER_API_KEY:-}
+      JEV_CACHE: /app/api_store/jev-cache.json
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-512}
+    volumes:
+      - app-data:/app/api_store
+    restart: unless-stopped
+
+volumes:
+  app-data:

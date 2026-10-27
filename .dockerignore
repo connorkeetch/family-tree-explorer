@@ -1,0 +1,27 @@
+# keep the build context small + reproducible
+**/node_modules
+**/__pycache__
+*.pyc
+*.pyo
+.venv
+web/dist
+web/node_modules
+
+# sensitive / local-only data — never ship in the image
+data/
+output/
+api_store/
+family-tree-backup*/
+*.ged
+!web/public/example.ged
+.env
+.env.local
+
+# not needed at runtime
+.git
+.gitignore
+.claude
+docs/
+tests/
+test_*.py
+README.md
