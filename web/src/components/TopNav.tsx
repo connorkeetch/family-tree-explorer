@@ -36,7 +36,7 @@ export default function TopNav({
     <nav className="topnav">
       <Link className="navbrand" to="/" title="Your trees">
         <span className="navbrand-mark">🌳</span>
-        <span className="navbrand-text">Family tree</span>
+        <span className="navbrand-text">Kinwhere</span>
       </Link>
       <div className="navlinks">
         {items.map((it) => (

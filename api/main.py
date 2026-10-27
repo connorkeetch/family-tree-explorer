@@ -37,7 +37,7 @@ except ValueError:
     MAX_UPLOAD_MB = 512
 MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
 
-app = FastAPI(title="Family Tree API", version="0.2.0")
+app = FastAPI(title="Kinwhere API", version="0.2.0")
 
 # The default secret is generated once in persistent app data; remote deployments
 # can provide SESSION_SECRET explicitly.

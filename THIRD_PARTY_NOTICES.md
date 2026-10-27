@@ -1,4 +1,4 @@
-# Third-party notices
+# Kinwhere third-party notices
 
 The project's original source is covered by [MIT](LICENSE). Dependencies and
 external services retain their own terms.

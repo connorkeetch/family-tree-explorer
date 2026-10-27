@@ -1,4 +1,4 @@
-# Run your own Family Tree
+# Run your own Kinwhere
 
 The default installation is for your own computer. Docker runs the website, API,
 and SQLite database together. You do not need Python, Node, a separate database,
@@ -49,10 +49,11 @@ automatically load `.env`.
 
 Compose stores the database, generated session secret, and AI answer cache in
 the named `app-data` volume mounted at `/app/api_store`. The stable project name
-`family-tree` keeps that volume associated with this installation if the source
-folder is renamed. To run a second independent installation on the same Docker
-host, use a different project name (`docker compose -p another-tree ...`) and a
-different `APP_PORT` consistently for that installation.
+`family-tree` is retained from v0.1.0 so Kinwhere continues using existing storage,
+even if the source folder is renamed. To run a second independent installation on
+the same Docker host, use a different project name
+(`docker compose -p another-tree ...`) and a different `APP_PORT` consistently for
+that installation.
 
 ## Stop, restart, and update
 

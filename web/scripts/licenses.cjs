@@ -3,7 +3,7 @@ const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
 const lock = JSON.parse(fs.readFileSync(path.join(root, "package-lock.json"), "utf8"));
-const notices = ["Family Tree — licenses for the browser bundle\n",
+const notices = ["Kinwhere — licenses for the browser bundle\n",
   fs.readFileSync(path.join(root, "..", "LICENSE"), "utf8")];
 for (const [location, entry] of Object.entries(lock.packages)) {
   if (!location || entry.dev) continue;

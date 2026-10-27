@@ -463,7 +463,7 @@ export default function DashboardPage() {
         <nav className="topnav">
           <span className="navbrand">
             <span className="navbrand-mark">🌳</span>
-            <span className="navbrand-text">Family tree</span>
+            <span className="navbrand-text">Kinwhere</span>
           </span>
         </nav>
         <div className={"dash" + (narrow ? " stacked" : "")}>

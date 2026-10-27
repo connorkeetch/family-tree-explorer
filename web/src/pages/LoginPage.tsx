@@ -38,8 +38,11 @@ export default function LoginPage() {
   return (
     <div className="auth-hero">
       <div className="auth-pitch">
-        <h1>Where did your family come from?</h1>
+        <h1>Kinwhere</h1>
         <p className="auth-tagline">
+          Explore the paths that brought you here.
+        </p>
+        <p>
           Upload a GEDCOM and get an interactive map of your ancestry, a re-rootable fan chart, migration
           paths, and an honest read on where each line goes cold.
         </p>

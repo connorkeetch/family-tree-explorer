@@ -1,4 +1,6 @@
-# Family Tree Explorer
+# Kinwhere
+
+Explore the paths that brought you here.
 
 Explore a GEDCOM family tree with an ancestry map, a re-rootable fan chart,
 migration flows, and research insights. Run your own copy on your computer.
@@ -12,7 +14,7 @@ required to run the app.**
 
 1. Install and start [Docker Desktop](https://docs.docker.com/desktop/) on Windows
    or macOS, or Docker Engine with Compose on Linux. Use Linux containers.
-2. Download a [source release](https://github.com/connorkeetch/family-tree-explorer/releases/latest),
+2. Download a [source release](https://github.com/connorkeetch/kinwhere/releases/latest),
    extract it, and open a terminal in the folder containing `compose.yaml`.
 3. Run:
 
@@ -85,7 +87,7 @@ controls. This is optional; local use needs no invitation.
 
 ## Contributing and development
 
-[Report a bug](https://github.com/connorkeetch/family-tree-explorer/issues) using
+[Report a bug](https://github.com/connorkeetch/kinwhere/issues) using
 fictional data, or open a focused pull request. See [contribution guidance](CONTRIBUTING.md)
 and the [development and CLI guide](docs/DEVELOPMENT.md).
 
