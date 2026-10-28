@@ -1,72 +1,6 @@
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-const { createRequire } = require("node:module");
 const { test } = require("node:test");
-const ts = require("typescript");
-
-function load(file, mocks = {}) {
-  const filename = path.join(__dirname, "src", file);
-  const js = ts.transpileModule(fs.readFileSync(filename, "utf8"), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020,
-      jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
-  }).outputText;
-  const localRequire = createRequire(filename);
-  const module = { exports: {} };
-  new Function("require", "module", "exports", js)(
-    (name) => name in mocks ? mocks[name] : localRequire(name), module, module.exports,
-  );
-  return module.exports;
-}
-
-function harness(file, mocks, exported = "default") {
-  const slots = [];
-  let cursor = 0, pending = [];
-  const changed = (a, b) => !a || a.length !== b.length || a.some((value, i) => !Object.is(value, b[i]));
-  const react = {
-    createContext: () => ({ Provider: "provider" }),
-    useState(initial) {
-      const i = cursor++;
-      if (!(i in slots)) slots[i] = { value: typeof initial === "function" ? initial() : initial };
-      return [slots[i].value, (value) => { slots[i].value = typeof value === "function" ? value(slots[i].value) : value; }];
-    },
-    useRef(initial) { const i = cursor++; return slots[i] ??= { current: initial }; },
-    useMemo(factory, deps) {
-      const i = cursor++;
-      if (changed(slots[i]?.deps, deps)) slots[i] = { deps, value: factory() };
-      return slots[i].value;
-    },
-    useEffect(effect, deps) {
-      const i = cursor++;
-      if (changed(slots[i]?.deps, deps)) pending.push({ i, effect, deps });
-    },
-  };
-  const Component = load(file, { react, ...mocks })[exported];
-  return {
-    render(...args) {
-      cursor = 0;
-      pending = [];
-      const output = Component(...args);
-      for (const { i } of pending) slots[i]?.cleanup?.();
-      for (const { i, effect, deps } of pending) slots[i] = { deps, cleanup: effect() };
-      return output;
-    },
-    unmount() { for (const slot of slots) slot?.cleanup?.(); },
-  };
-}
-
-function all(node, predicate) {
-  if (!node || typeof node !== "object") return [];
-  return [...(predicate(node) ? [node] : []),
-    ...[node.props?.children].flat(Infinity).flatMap((child) => all(child, predicate))];
-}
-const find = (node, predicate) => all(node, predicate)[0];
-const flush = () => new Promise(setImmediate);
-function globalValue(t, name, value) {
-  const previous = Object.getOwnPropertyDescriptor(globalThis, name);
-  Object.defineProperty(globalThis, name, { value, writable: true, configurable: true });
-  t.after(() => previous ? Object.defineProperty(globalThis, name, previous) : delete globalThis[name]);
-}
+const { load, harness, nodes, find, flush, globalValue } = require("./test-helpers.cjs");
 
 test("protected 401 expires cached authentication; credential and initial-session failures stay local", async (t) => {
   const events = new EventTarget();
@@ -86,7 +20,7 @@ test("protected 401 expires cached authentication; credential and initial-sessio
   let calls = 0;
   const h = harness("auth/AuthContext.tsx", { "../api/client": { api: {
     me: async () => { calls++; return { id: 1, email: "a@example.com" }; },
-  } } }, "AuthProvider");
+  } } }, { exported: "AuthProvider" });
   h.render({ children: null });
   await flush();
   assert.equal(h.render({ children: null }).props.value.user.id, 1);
@@ -184,7 +118,7 @@ test("focus trapping keeps its position on rerender, uses the latest Escape call
   const last = { focus() { lastFocus++; document.activeElement = this; } };
   const node = { querySelector: () => first, querySelectorAll: () => [first, last], contains: (el) => el === first || el === last };
   document.activeElement = previous;
-  const h = harness("lib/useFocusTrap.ts", {}, "useFocusTrap");
+  const h = harness("lib/useFocusTrap.ts", {}, { exported: "useFocusTrap" });
   const ref = { current: node };
   h.render(ref, () => oldEscape++, true);
   h.render(ref, () => newEscape++, true);
@@ -225,18 +159,18 @@ test("a person list remains searchable with its query intact while full details 
   assert.equal(find(view, (n) => n.type === "input").props.value, "Bert");
   view = h.render(props);
   assert.equal(find(view, (n) => n.type === "input").props.value, "Bert");
-  assert.equal(all(view, (n) => n.props?.className === "drill-row").length, 1);
+  assert.equal(nodes(view).filter((n) => n.props?.className === "drill-row").length, 1);
   assert.deepEqual(trapped, [true, false, true]);
   const search = find(view, (n) => n.type === "input");
   assert.equal(search.props["aria-label"], "Search people or places");
   search.props.onChange({ target: { value: "  enGLand  " } });
   view = h.render(props);
-  assert.equal(all(view, (n) => n.props?.className === "drill-row").length, 1);
+  assert.equal(nodes(view).filter((n) => n.props?.className === "drill-row").length, 1);
   assert.ok(find(view, (n) => n.type === "span" && Array.isArray(n.props.children) &&
     n.props.children.includes("York, England")));
   find(view, (n) => n.type === "input").props.onChange({ target: { value: "Annie" } });
   view = h.render(props);
-  assert.equal(all(view, (n) => n.props?.className === "drill-row").length, 1,
+  assert.equal(nodes(view).filter((n) => n.props?.className === "drill-row").length, 1,
     "name search still finds a person without a recorded birthplace");
 });
 
@@ -248,7 +182,7 @@ test("autofocused dialog fields keep focus, including when a different dialog op
   const otherDialog = {};
   const node = { querySelector: () => search, contains: (el) => el === search };
   document.activeElement = search;
-  const h = harness("lib/useFocusTrap.ts", {}, "useFocusTrap");
+  const h = harness("lib/useFocusTrap.ts", {}, { exported: "useFocusTrap" });
   const ref = { current: node };
   h.render(ref, () => {}, true);
   assert.equal(focused, 0, "a native autofocus field must not lose focus to the close button");

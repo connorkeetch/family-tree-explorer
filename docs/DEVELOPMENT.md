@@ -11,7 +11,7 @@ environment with `python -m venv .venv`. Activate it with
 
 ```sh
 python -m pip install -r api/requirements.txt
-python -m uvicorn api.main:app --port 8000
+python -m uvicorn api.main:app --reload --port 8000
 ```
 
 In another terminal:
@@ -24,6 +24,7 @@ npm --prefix web run dev
 Open http://localhost:5173. Vite proxies `/api` to the backend. Python does not
 automatically load `.env`; set optional environment variables explicitly.
 Local data and a stable generated secret default to the ignored `api_store/` folder.
+The backend restarts when you save Python changes; Vite refreshes frontend changes.
 
 ## Checks
 
@@ -58,6 +59,68 @@ CI runs Python/frontend checks on Windows and Linux and container checks on Linu
 | `scripts/` | Release validation helpers. |
 | `tests/fixtures/` and `test_*.py` | Synthetic fixtures and Python checks. |
 | `archive/` | Retired deeper-pull tooling, retained for reference. |
+
+## Follow a record from file to screen
+
+Use the fictional [example GEDCOM](../web/public/example.ged) while developing.
+Import it in the app and choose Avery Example as the starting person.
+
+1. [UploadPage.tsx](../web/src/pages/UploadPage.tsx) previews the file, asks for
+   the starting person, then calls `api.upload()` in
+   [client.ts](../web/src/api/client.ts).
+2. [api/main.py](../api/main.py) handles the upload. It calls
+   `core.parse_gedcom.build_people()` to turn GEDCOM records into the shared
+   people list, then [api/store.py](../api/store.py) saves that list and metadata.
+   Raw uploaded files are discarded.
+3. Analysis requests read the saved people list. [core/payloads.py](../core/payloads.py)
+   builds the JSON for the map, family chart, and research views.
+4. [DashboardPage.tsx](../web/src/pages/DashboardPage.tsx) loads those responses,
+   applies the view's filters, and passes the data to `web/src/viz/` and
+   `web/src/components/`.
+
+The stored person uses descriptive names such as `birth_year` and
+`on_direct_line`. Browser payloads use `year` and `dir`; `gen` means generations
+from the starting person, `nat` is the origin label, `src` is the source count,
+and `xref` identifies a person within that tree. Follow the mapping in
+`core/payloads.py` rather than changing a stored field to match a screen label.
+
+## Change a field or calculation
+
+For example, `living_count` follows this path:
+
+`core.privacy.count_living()` → `core.payloads._meta()` → `api.schemas.TreeMeta`
+→ `web/src/api/types.ts: TreeMeta`.
+
+For a displayed field, use the typed API response in the relevant page or component.
+
+- For a field parsed from GEDCOM, start in `core/parse_gedcom.py`. For a value
+  calculated from existing records, start in `core/payloads.py` or its calculation
+  helper. Keep display-only changes in the frontend.
+- If an endpoint uses a response model, update `api/schemas.py` too: fields absent
+  from that model are removed from its response. All browser response types in
+  `web/src/api/types.ts` are hand-written, so update the matching interface.
+- Check callers before changing or removing a JSON field. Analysis functions are
+  also exported from `core/__init__.py`; an unused browser field may still be part
+  of the API or library contract. New stored fields must work with older saved
+  trees, which do not acquire those fields until reimported.
+- Keep parsing, parent selection, and origin inference in Python. The browser
+  recalculates filter-dependent summaries in `web/src/lib/insights.ts`; country
+  shading and summaries retain the whole-tree scope. Label that scope in the UI.
+- The API retains precomputed `stats` and `sankey` fields for library/API callers.
+  The interface derives filtered summaries from people and immigrant rows instead.
+  Pedigree completeness comes from the full family-chart parent links so repeated
+  ancestors fill every documented position. Keep migration grouping rules aligned
+  with the shared cases in `tests/fixtures/migration.json`.
+
+Start with the tests nearest the change: `test_parse_gedcom.py` for parsing,
+`test_payloads.py` for analysis responses, `test_api.py` for response validation
+and account isolation, and the relevant `web/*.test.cjs` file for frontend behavior.
+Use synthetic records for new cases. Run the full checks above before submitting.
+
+For frontend tests, reuse the loader, hook runner, and tree helpers in
+`web/test-helpers.cjs` rather than copying a new test harness. These are focused
+unit tests; they do not render a browser or replace a keyboard/mobile walkthrough
+when changing interactions or layout.
 
 ## Genealogy CLI
 

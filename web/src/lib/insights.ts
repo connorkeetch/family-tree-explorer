@@ -1,7 +1,5 @@
-// Client-side insight derivations — the single source of truth for the four
-// aggregate insight cards and the migration Sankey. These run over the filtered
-// arrays; the dashboard substitutes whole-tree pedigree completeness. Migration
-// groups categories only when they would crowd the chart.
+// Filtered insight cards and migration flows are derived in the browser.
+// Pedigree completeness belongs to the whole-tree deriveGenComposition result.
 //
 // The graph-walk stats (pedigree collapse, the Y/mt DNA lineages) can't be
 // recomputed without parent links, so those stay server-precomputed in `stats`
@@ -11,7 +9,6 @@ import type {
   Person,
   Immigrant,
   Colors,
-  Completeness,
   SurnameRow,
   Longevity,
   LifeRow,
@@ -43,7 +40,6 @@ function inc<K>(m: Map<K, number>, k: K, by = 1): void {
 }
 
 export interface DerivedInsights {
-  completeness: Completeness[];
   surnames: SurnameRow[];
   longevity: Longevity;
   immigration: Immigration;
@@ -68,17 +64,6 @@ export function deriveInsights(
   immigrants: Immigrant[],
   colors: Colors,
 ): DerivedInsights {
-  // --- pedigree completeness: known direct ancestors vs the 2^gen possible ----
-  const byGen: Record<number, number> = {};
-  for (const p of people) {
-    if (p.dir && p.gen != null && p.gen >= 1) byGen[p.gen] = (byGen[p.gen] || 0) + 1;
-  }
-  const maxGen = Object.keys(byGen).reduce((m, g) => Math.max(m, +g), 0);
-  const completeness: Completeness[] = [];
-  for (let g = 1; g <= maxGen; g++) {
-    completeness.push({ gen: g, known: byGen[g] || 0, expected: 2 ** g });
-  }
-
   // --- top surnames (direct line, excluding root), by dominant resolved origin -
   const surCount = new Map<string, number>();
   const surOrigin = new Map<string, Map<string, number>>();
@@ -133,7 +118,6 @@ export function deriveInsights(
   const longevity: Longevity = { n: nLife, by_century, by_origin };
 
   return {
-    completeness,
     surnames,
     longevity,
     immigration: deriveImmigration(immigrants, colors),
@@ -163,8 +147,9 @@ function deriveImmigration(immigrants: Immigrant[], colors: Colors): Immigration
   return { by_decade, undated, total: immigrants.length };
 }
 
-// Use the same category labels for the chart and its people lists. Keep small
-// selections named; only fold lower-ranked categories when there are more than 8.
+// API mirror: core/payloads.py::_migration_labels; tests/fixtures/migration.json locks parity.
+// Keep <=8 categories named; otherwise top7 + Other. Parenthesized unknowns stay named.
+// Ties use UTF-16 ordinal label order, independent of locale.
 function migrationLabels(immigrants: Immigrant[]) {
   const origins = new Map<string, number>();
   const settlements = new Map<string, number>();
@@ -173,7 +158,7 @@ function migrationLabels(immigrants: Immigrant[]) {
     inc(settlements, im.settlement);
   }
   const labels = (totals: Map<string, number>, other: string) => {
-    const ranked = [...totals].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const ranked = [...totals].sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
     const kept = new Set((ranked.length <= 8 ? ranked : ranked.slice(0, 7)).map(([name]) => name));
     return (name: string) => kept.has(name) || name.startsWith("(") ? name : other;
   };
@@ -211,7 +196,7 @@ export function deriveSankey(immigrants: Immigrant[], colors: Colors): SankeyDat
   rows.sort(
     (a, b) =>
       b.count - a.count ||
-      (a.origin < b.origin ? -1 : a.origin > b.origin ? 1 : a.settlement < b.settlement ? -1 : 1),
+      (a.origin < b.origin ? -1 : a.origin > b.origin ? 1 : a.settlement < b.settlement ? -1 : a.settlement > b.settlement ? 1 : 0),
   );
   let total = 0;
   let settled = 0;

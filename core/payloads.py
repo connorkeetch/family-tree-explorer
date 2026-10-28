@@ -445,8 +445,16 @@ def _country_details(people, branch_of, immigrant_xref, direct_child):
     return out
 
 
+def _migration_labels(totals, other):
+    # Same rule as web/src/lib/insights.ts; tests/fixtures/migration.json locks parity.
+    # UTF-16 ordinal ties match browser string comparisons, independent of locale.
+    ranked = sorted(totals, key=lambda label: (-totals[label], label.encode("utf-16-be")))
+    kept = set(ranked if len(ranked) <= 8 else ranked[:7])
+    return {label: label if label in kept or label.startswith("(") else other for label in totals}
+
+
 def _sankey(direct, direct_child, immigrant_xref, color_of):
-    """Immigrant origin -> first New-World settlement flows (small ones folded)."""
+    """Migration API compatibility field; the browser groups filtered rows itself."""
     raw = defaultdict(int)
     for xref in immigrant_xref:
         olbl, ores, _ = ao.origin_of(direct[xref])
@@ -459,16 +467,15 @@ def _sankey(direct, direct_child, immigrant_xref, color_of):
     for (o, s), c in raw.items():
         o_tot[o] += c
         s_tot[s] += c
-    keep_o = {o for o, t in o_tot.items() if t >= 10}
-    keep_s = {s for s, t in s_tot.items() if t >= 8 and not s.startswith("(")}
+    origins = _migration_labels(o_tot, "Other origins")
+    settlements = _migration_labels(s_tot, "Other states")
     flows = defaultdict(int)
     for (o, s), c in raw.items():
-        oo = o if o in keep_o else "Other origins"
-        ss = s if (s.startswith("(") or s in keep_s) else "Other states"
-        flows[(oo, ss)] += c
+        flows[(origins[o], settlements[s])] += c
     rows = [{"origin": o, "settlement": s, "count": c,
              "color": color_of.get(o, "#6b7280")}
-            for (o, s), c in sorted(flows.items(), key=lambda kv: -kv[1])]
+            for (o, s), c in sorted(flows.items(), key=lambda kv: (
+                -kv[1], kv[0][0].encode("utf-16-be"), kv[0][1].encode("utf-16-be")))]
     total = sum(flows.values())
     settled = sum(c for (o, s), c in flows.items() if not s.startswith("("))
     return {"flows": rows, "total": total, "settled": settled}

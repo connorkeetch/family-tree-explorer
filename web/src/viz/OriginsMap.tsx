@@ -441,5 +441,5 @@ function OriginsMap({
 }
 
 // Memoized so the map only re-renders when its own inputs change — clicking a
-// country, dragging the sidebar, or toggling the scrubber no longer rebuilds it.
+// country or toggling the scrubber no longer rebuilds it.
 export default memo(OriginsMap);

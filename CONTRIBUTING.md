@@ -2,6 +2,8 @@
 
 Bug reports, documentation fixes, and small focused pull requests are welcome.
 Use the [development guide](docs/DEVELOPMENT.md) to run the app and its checks.
+New to the code? Start by [following a record from file to screen](docs/DEVELOPMENT.md#follow-a-record-from-file-to-screen)
+and read [how to change a field or calculation](docs/DEVELOPMENT.md#change-a-field-or-calculation).
 
 Before reporting a bug, search the existing issues and try the fictional example
 tree. Include the release version, operating system, installation method, steps

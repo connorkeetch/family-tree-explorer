@@ -1,9 +1,8 @@
 """Pydantic response models.
 
-Only the small, stable response shapes are modelled here (handy for OpenAPI and
-the SPA's generated types). The large analysis payloads from :mod:`core.payloads`
-are returned as plain dicts -- modelling every nested field would be churn while
-the SPA shape is still settling; the SPA mirrors them with hand-written TS types.
+Small response shapes are validated here and included in OpenAPI. Analysis
+payloads from :mod:`core.payloads` are returned as plain dicts. The browser's
+hand-written mirrors of both live in ``web/src/api/types.ts``.
 """
 from typing import Optional
 
@@ -20,6 +19,7 @@ class TreeMeta(BaseModel):
     n_coords: int
     total_sources: int
     total_memories: int
+    living_count: int
     source_files: Optional[list[str]] = None
 
 

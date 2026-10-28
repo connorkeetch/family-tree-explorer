@@ -29,8 +29,8 @@ export default function DashboardPage() {
   const [params, setParams] = useSearchParams();
 
   // Each analysis endpoint loads independently so one slow/failed view never
-  // blanks the others: the map (which also drives the sidebar + migration +
-  // insights stats) is the only one the shell waits on; the fan and dead-ends
+  // blanks the others: the map (which also drives migration and insight stats)
+  // is the only one the shell waits on; the fan and dead-ends
   // resolve into their own tabs with per-view loading/error.
   const [map, setMap] = useState<MapPayload | null>(null);
   const [mapErr, setMapErr] = useState<string | null>(null);
@@ -222,7 +222,7 @@ export default function DashboardPage() {
   // the insights cards, and the migration flows all derive from it, so one control
   // (incl. the generation range) narrows everything at once. Memoized for stable
   // array identity: OriginsMap's React.memo keeps skipping marker rebuilds on
-  // unrelated re-renders (modal open, sidebar drag, scrubber).
+  // unrelated re-renders (modal open, scrubber).
   const fpeople = useMemo(
     () => (map && filter ? map.people.filter((p) => matchFilter(filter, p)) : []),
     [map, filter],

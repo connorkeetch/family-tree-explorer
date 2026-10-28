@@ -52,6 +52,14 @@ class TestApi(unittest.TestCase):
     def test_upload_returns_meta(self):
         self.assertEqual(self.tree["meta"]["n_people"], 7)
         self.assertEqual(self.tree["meta"]["root"], "Kid Example")
+        self.assertIsInstance(self.tree["meta"]["living_count"], int)
+        for metadata in (
+            self.client.get(f"/api/trees/{self.id}/meta").json(),
+            self.client.get(f"/api/trees/{self.id}/export").json()["meta"],
+            next(t["meta"] for t in self.client.get("/api/trees").json()
+                 if t["id"] == self.id),
+        ):
+            self.assertEqual(self.tree["meta"], metadata)
 
     def test_list_my_trees(self):
         trees = self.client.get("/api/trees").json()
