@@ -1,23 +1,6 @@
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-const { createRequire } = require("node:module");
 const { test } = require("node:test");
-const ts = require("typescript");
-
-function load(file, mocks = {}) {
-  const filename = path.join(__dirname, "src", file);
-  const js = ts.transpileModule(fs.readFileSync(filename, "utf8"), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020,
-      jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true },
-  }).outputText;
-  const localRequire = createRequire(filename);
-  const module = { exports: {} };
-  new Function("require", "module", "exports", js)(
-    (name) => name in mocks ? mocks[name] : localRequire(name), module, module.exports,
-  );
-  return module.exports;
-}
+const { load, harness, find } = require("./test-helpers.cjs");
 
 const { AMERICAN, FILTER_KEYS, defaultFilter, readFilter, writeFilter, matchDecade } = load("lib/filter.ts");
 const ranges = { yr_lo: -2500, yr_hi: 2026, gen_lo: 0, gen_hi: 20 };
@@ -77,52 +60,7 @@ test("born-through-decade filtering preserves BC and year-zero records without i
   assert.equal(matchDecade("born", 0, { year: null, dyear: 1 }), false);
 });
 
-function find(node, predicate) {
-  if (!node || typeof node !== "object") return null;
-  if (predicate(node)) return node;
-  for (const child of [node.props?.children].flat(Infinity)) {
-    const found = find(child, predicate);
-    if (found) return found;
-  }
-  return null;
-}
-
-// Execute component effects with the same dependency/cleanup behavior across renders.
-function renderer(Component, react) {
-  const slots = [];
-  const changed = (old, next) => !old || old.length !== next.length || old.some((value, i) => !Object.is(value, next[i]));
-  return {
-    render(props) {
-      let cursor = 0;
-      const effects = [];
-      react.useState = (initial) => {
-        const index = cursor++;
-        slots[index] ??= { value: typeof initial === "function" ? initial() : initial };
-        return [slots[index].value, (value) => {
-          slots[index].value = typeof value === "function" ? value(slots[index].value) : value;
-        }];
-      };
-      react.useRef = (initial) => slots[cursor++] ??= { current: initial };
-      react.useMemo = (factory, deps) => {
-        const index = cursor++;
-        if (changed(slots[index]?.deps, deps)) slots[index] = { value: factory(), deps };
-        return slots[index].value;
-      };
-      react.useEffect = (effect, deps) => {
-        const index = cursor++;
-        if (changed(slots[index]?.deps, deps)) effects.push({ index, effect, deps });
-      };
-      const tree = Component(props);
-      for (const { index } of effects) slots[index]?.cleanup?.();
-      for (const { index, effect, deps } of effects) slots[index] = { deps, cleanup: effect() };
-      return tree;
-    },
-    unmount() { for (const slot of slots) slot?.cleanup?.(); },
-  };
-}
-
 function mapFixture(initialCamera) {
-  const react = { memo: (component) => component };
   const fits = [], views = [], saved = [], events = new Map();
   let center, zoom, created = 0, removed = 0;
   const map = {
@@ -133,16 +71,15 @@ function mapFixture(initialCamera) {
     off(names) { for (const name of names.split(" ")) events.delete(name); },
     remove() { removed++; },
   };
-  const OriginsMap = load("viz/OriginsMap.tsx", { react,
+  const component = harness("viz/OriginsMap.tsx", {
     leaflet: { map: () => { created++; return map; }, tileLayer: () => ({ addTo() {} }), latLngBounds: (points) => points },
     supercluster: class {}, "../lib/year": { formatYear: String },
-  }).default;
-  const component = renderer(OriginsMap, react);
+  });
   let props = { points: [], arcs: [], showArcs: false, coordMode: "birth", countryData: {}, countryDetails: {},
     initialCamera, onCameraChange: (camera) => saved.push(camera) };
   component.render(props);
   let tree = component.render(props);
-  const fit = renderer(find(tree, (node) => node.type?.name === "FitBounds").type, react);
+  const fit = harness(find(tree, (node) => node.type?.name === "FitBounds").type, { react: component.react });
   return {
     fits, views, saved, events, map,
     render(next = {}) {

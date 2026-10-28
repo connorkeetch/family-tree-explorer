@@ -1,5 +1,5 @@
-// TypeScript mirror of the JSON payloads from core/payloads.py.
-// Kept hand-written (rather than generated) while the shape is still settling.
+// Hand-written mirrors of api/schemas.py and core/payloads.py responses.
+// Update with the Python response; see docs/DEVELOPMENT.md#change-a-field-or-calculation.
 
 export type Colors = Record<string, string>;
 

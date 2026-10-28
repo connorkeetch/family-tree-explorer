@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import type {
+  Completeness,
   Collapse,
   Dna,
   DeadendsPayload,
@@ -151,7 +152,7 @@ export default function StatsPanel({
   onPerson,
   onShowPeople,
 }: {
-  insights: DerivedInsights;
+  insights: DerivedInsights & { completeness: Completeness[] };
   collapse: Collapse;
   dna: Dna;
   deadends: DeadendsPayload | null;

@@ -1,45 +1,18 @@
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-const { createRequire } = require("node:module");
 const { test } = require("node:test");
-const ts = require("typescript");
+const { harness, nodes, find } = require("./test-helpers.cjs");
 
 function page(api) {
-  const states = [];
-  let cursor = 0;
   const navigated = [];
-  const filename = path.join(__dirname, "src/pages/UploadPage.tsx");
-  const localRequire = createRequire(filename);
-  const mocks = {
-    react: {
-      useState(initial) {
-        const index = cursor++;
-        if (!(index in states)) states[index] = initial;
-        return [states[index], (value) => { states[index] = value; }];
-      },
-      useRef: () => ({ current: { click() {} } }),
-    },
+  const component = harness("pages/UploadPage.tsx", {
     "react-router-dom": { Link: "a", useNavigate: () => (url) => navigated.push(url) },
     "../api/client": { api },
     "../components/ImportGuide": () => null,
     "../lib/year": { formatYear: (year) => year < 0 ? `${-year} BC` : String(year) },
-  };
-  const js = ts.transpileModule(fs.readFileSync(filename, "utf8"), {
-    compilerOptions: { module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX,
-      target: ts.ScriptTarget.ES2020, esModuleInterop: true },
-  }).outputText;
-  const module = { exports: {} };
-  new Function("require", "module", "exports", js)(
-    (name) => name in mocks ? mocks[name] : localRequire(name), module, module.exports);
-  return { render() { cursor = 0; return module.exports.default(); }, navigated };
+  });
+  return { ...component, navigated };
 }
 
-function nodes(node) {
-  if (!node || typeof node !== "object") return [];
-  return [node, ...[node.props?.children].flat(Infinity).flatMap(nodes)];
-}
-const find = (tree, predicate) => nodes(tree).find(predicate);
 const button = (tree, text) => find(tree, (node) => node.type === "button" && node.props.children === text);
 const input = (tree) => find(tree, (node) => node.type === "input" && node.props.type === "file");
 const radios = (tree) => nodes(tree).filter((node) => node.type === "input" && node.props.type === "radio");

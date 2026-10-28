@@ -5,9 +5,7 @@ the static self-contained HTML generator was retired. This module keeps only the
 pure record-building helpers that :func:`core.payloads.fan_payload` reuses to
 shape the per-person records the chart renders. Stdlib only.
 """
-from collections import Counter
-
-from .analyze_origins import origin_detail, origin_of, parent_slots, settlement_of, PALETTE
+from .analyze_origins import origin_detail, origin_of, parent_slots, settlement_of
 
 UNTRACED = "(untraced)"
 GRAY = "#a9a9a9"
@@ -16,22 +14,6 @@ GRAY = "#a9a9a9"
 def nat_of(person):
     label, resolved, _ = origin_of(person)
     return label if (label and resolved) else UNTRACED
-
-
-def build_color_map(people):
-    """Assign palette colors to nationalities by descending headcount."""
-    counts = Counter()
-    for p in people:
-        if p.get("generation") == 0:
-            continue
-        label, resolved, _ = origin_of(p)
-        if label and resolved:
-            counts[label] += 1
-    color_of = {}
-    for i, (nat, _) in enumerate(counts.most_common()):
-        color_of[nat] = PALETTE[i % len(PALETTE)]
-    color_of[UNTRACED] = GRAY
-    return color_of
 
 
 def short_place(place):
