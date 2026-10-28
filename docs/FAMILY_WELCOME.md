@@ -1,38 +1,32 @@
-# Family welcome note
+# Optional note for a shared installation
 
-A copy-paste template to invite family to the site (email, text, group chat).
-Fill in the two placeholders before sending:
-
-- **`[YOUR SITE URL]`** — your Railway URL once deployed.
-- **`[YOUR INVITE CODE]`** — whatever you set the `INVITE_CODE` env var to.
+Kinwhere normally runs on each person's own computer. This template is only for
+someone who has chosen to run an installation for family members. Replace the
+site URL, and include an invite code only if that installation requires one.
 
 ---
 
-**Subject: See where our family came from 🌍**
+**Subject: Explore your family tree with Kinwhere**
 
-Hi! I built a little private website that maps our ancestry — where everyone was
-born, the routes our immigrant ancestors took across the ocean, a spinning family
-"fan" chart, and an honest look at where the trail goes cold. It's just for family.
+Hi! I've set up Kinwhere so we can explore our family tree through maps, family
+charts, migration paths, and research hints.
 
-**To get in:**
+1. Open **[YOUR SITE URL]** and choose **Create account**. This account belongs
+   to our Kinwhere installation; use a separate password from FamilySearch.
+   If needed, expand the invite-code field and enter **[YOUR INVITE CODE]**.
+2. Choose **Try an example tree** to explore a fictional family first.
+3. To use your own records, export a GEDCOM (`.ged`) from your genealogy software.
+   Choose **Import my family tree**, select the file, and choose **Find starting person**.
+4. Search by name, birth year, or birthplace. Confirm whose ancestors you want
+   to explore, then choose **Import tree**.
 
-1. Go to **[YOUR SITE URL]** and click **Create account** (email + a password).
-   When it asks for an **invite code**, enter: **[YOUR INVITE CODE]**
-2. You'll need your family tree as a file called a "GEDCOM" (`.ged`).
-   Use a compatible Family Tree Management app from
-   [FamilySearch's Solutions Gallery](https://www.familysearch.org/en/innovate/solutions-gallery)
-   to import your ancestors and export the file. FamilySearch's former direct
-   GEDCOM export is no longer supported. The upload page also explains a local
-   command-line option.
-3. Back on our site, click **Upload**, choose that `.ged` file, and you're in —
-   explore the map, the fan chart, and the rest.
+Map pins need coordinates in the file. Place search, recognized country summaries,
+and the family chart remain useful without them. The import page explains how to
+get a GEDCOM from different services.
 
-**A note on privacy:** the site **never asks for your FamilySearch password** — you
-export the file yourself and upload only that. Your tree is private to your
-account. Records classified as likely living are excluded from external AI
-analysis; missing dates can prevent detection. Keep AI disabled if you do not
-want records sent to an external service.
+Each account sees its own uploaded trees. Kinwhere does not ask for your
+FamilySearch password. Optional AI is off unless the installation operator enables
+it; read the installation's privacy information before importing personal records.
 
-There's a "How do I get my GEDCOM?" guide on the upload page for bigger pulls.
-When refreshing your tree, upload the new full file alone so older files do not
-bring back removed relationships. Or just reply and I'll help. Have fun poking around! 🧬
+When refreshing a tree, import only the new full export so older files do not
+bring back removed relationships. Keep your original GEDCOM as source material.

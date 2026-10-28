@@ -1,0 +1,20 @@
+name: Feature request
+description: Suggest an improvement and explain the family-history task it would help.
+body:
+  - type: markdown
+    attributes:
+      value: "Use fictional examples. Do not include identifiable family information, GEDCOMs, credentials, or backups."
+  - type: textarea
+    id: task
+    attributes:
+      label: What are you trying to do?
+      description: Describe the task and what makes it difficult today.
+    validations:
+      required: true
+  - type: textarea
+    id: improvement
+    attributes:
+      label: What would help?
+      description: Describe the result you want and any alternatives you have tried.
+    validations:
+      required: true

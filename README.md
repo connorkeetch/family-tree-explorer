@@ -2,11 +2,19 @@
 
 Explore the paths that brought you here.
 
-Explore a GEDCOM family tree with an ancestry map, family relationships,
-migration paths, and research hints. Run your own copy on your computer.
+[![Checks](https://github.com/connorkeetch/kinwhere/actions/workflows/checks.yml/badge.svg)](https://github.com/connorkeetch/kinwhere/actions/workflows/checks.yml)
+[![Latest release](https://img.shields.io/github/v/release/connorkeetch/kinwhere)](https://github.com/connorkeetch/kinwhere/releases/latest)
+[![MIT license](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
+Kinwhere turns a GEDCOM export into an interactive ancestry map, family chart,
+migration view, and research hints. Run your own copy with Docker and explore
+your records in a browser.
 
 **MIT licensed. No invitation, subscription, FamilySearch password, or AI key is
 required to run the app.**
+
+[Get started](#start-your-own-copy) · [What it does](#what-you-can-explore) ·
+[Installation and backups](docs/SELF_HOSTING.md) · [Contribute](CONTRIBUTING.md)
 
 ![Fan chart using the fictional example family](docs/images/example-fan.png)
 
@@ -14,7 +22,8 @@ required to run the app.**
 
 1. Install and start [Docker Desktop](https://docs.docker.com/desktop/) on Windows
    or macOS, or Docker Engine with Compose on Linux. Use Linux containers.
-2. Download a [source release](https://github.com/connorkeetch/kinwhere/releases/latest),
+2. Download the **`kinwhere-*.zip`** asset from the
+   [latest release](https://github.com/connorkeetch/kinwhere/releases/latest),
    extract it, and open a terminal in the folder containing `compose.yaml`.
 3. Run:
 
@@ -47,8 +56,18 @@ sharing them.
 - **Find a person:** search names or recorded birthplaces across the tree, open
   person details, or view their family relationships. Recorded places remain
   searchable when they cannot be placed on the map.
-- **Optional AI:** map unclear places and suggest duplicate records or parent
-  claims, with visible uncertainty labels.
+- **Optional AI:** infer country labels for unclear place names and suggest
+  duplicate records or parent claims, with visible uncertainty labels.
+
+### What to expect
+
+Kinwhere explores GEDCOM exports. Edit records in your genealogy app, then import
+an updated file. This is an early release; feedback on different exporters is welcome.
+
+Map pins require latitude and longitude already present in the GEDCOM. Recognized
+place names still support country summaries, and recorded places remain searchable
+without coordinates. Optional AI infers country labels; it does not add coordinates.
+The migration view and immigrant-origin estimate use a U.S./Canada settlement model.
 
 Results describe the records you imported. Ancestral origin percentages are
 genealogy calculations, **not DNA-test results**. Missing information stays
@@ -58,6 +77,17 @@ recorded information.
 The included [example GEDCOM](web/public/example.ged) is fictional and has no
 FamilySearch IDs. Download it from the upload page, or try it directly from Home.
 Your own GEDCOM may come from any compatible exporter; see the in-app import guide.
+
+<details>
+<summary>See the map and migration views</summary>
+
+All screenshots use the bundled fictional family.
+
+![Recorded birthplaces and family migration paths](docs/images/example-map.png)
+
+![Named migration routes and people behind each route](docs/images/example-migration.png)
+
+</details>
 
 ## Privacy and your data
 
