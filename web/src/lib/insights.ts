@@ -1,10 +1,7 @@
 // Client-side insight derivations — the single source of truth for the four
-// aggregate insight cards and the migration Sankey. These port
-// core.payloads._stats / _sankey EXACTLY (same person-sets + thresholds) but run
-// over the CLIENT-filtered arrays, so every card tracks the active filter (incl.
-// the generation range) with no server round-trip. At the default (full) filter
-// the numbers equal the server's `stats`/`sankey` block — that equivalence is the
-// parity check (the server block stays in the payload as the reference oracle).
+// aggregate insight cards and the migration Sankey. These run over the filtered
+// arrays; the dashboard substitutes whole-tree pedigree completeness. Migration
+// groups categories only when they would crowd the chart.
 //
 // The graph-walk stats (pedigree collapse, the Y/mt DNA lineages) can't be
 // recomputed without parent links, so those stay server-precomputed in `stats`
@@ -166,31 +163,41 @@ function deriveImmigration(immigrants: Immigrant[], colors: Colors): Immigration
   return { by_decade, undated, total: immigrants.length };
 }
 
-// --- migration Sankey: origin -> first New-World settlement, small ones folded -
+// Use the same category labels for the chart and its people lists. Keep small
+// selections named; only fold lower-ranked categories when there are more than 8.
+function migrationLabels(immigrants: Immigrant[]) {
+  const origins = new Map<string, number>();
+  const settlements = new Map<string, number>();
+  for (const im of immigrants) {
+    inc(origins, im.origin);
+    inc(settlements, im.settlement);
+  }
+  const labels = (totals: Map<string, number>, other: string) => {
+    const ranked = [...totals].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const kept = new Set((ranked.length <= 8 ? ranked : ranked.slice(0, 7)).map(([name]) => name));
+    return (name: string) => kept.has(name) || name.startsWith("(") ? name : other;
+  };
+  return { origin: labels(origins, "Other origins"), settlement: labels(settlements, "Other states") };
+}
+
+// --- migration Sankey: origin -> first New-World settlement ------------------
 // Nested maps (origin -> settlement -> count) avoid any composite string key, so
 // multi-word labels like "New York" / "American (USA)" need no escaping.
 export function deriveSankey(immigrants: Immigrant[], colors: Colors): SankeyData {
   const raw = new Map<string, Map<string, number>>();
-  const oTot = new Map<string, number>();
-  const sTot = new Map<string, number>();
   for (const im of immigrants) {
     let m = raw.get(im.origin);
     if (!m) raw.set(im.origin, (m = new Map()));
     inc(m, im.settlement);
-    inc(oTot, im.origin);
-    inc(sTot, im.settlement);
   }
-  // Fold rare origins/settlements (matching _sankey: origin total < 10, or a
-  // non-"(" settlement total < 8) into catch-all nodes, re-aggregating.
+  const labels = migrationLabels(immigrants);
   const flows = new Map<string, Map<string, number>>();
   for (const [o, sm] of raw) {
-    const oo = (oTot.get(o) || 0) >= 10 ? o : "Other origins";
+    const oo = labels.origin(o);
     let fm = flows.get(oo);
     if (!fm) flows.set(oo, (fm = new Map()));
     for (const [s, c] of sm) {
-      const keepS = (sTot.get(s) || 0) >= 8 && !s.startsWith("(");
-      const ss = s.startsWith("(") || keepS ? s : "Other states";
-      inc(fm, ss, c);
+      inc(fm, labels.settlement(s), c);
     }
   }
   const rows: SankeyFlow[] = [];
@@ -215,31 +222,16 @@ export function deriveSankey(immigrants: Immigrant[], colors: Colors): SankeyDat
   return { flows: rows, total, settled };
 }
 
-// Resolve the immigrants behind a clicked Sankey node or ribbon. Re-derives the
-// SAME fold labels deriveSankey uses (origins < 10 -> "Other origins"; non-"("
-// settlements < 8 -> "Other states"), so a click on a rollup node returns the
-// real people inside it rather than nothing. Pass `immigrants` already narrowed
-// by the active filter and the result tracks the filter for free.
+// Resolve chart nodes/ribbons against the same filtered people and grouping.
 export function sankeyMembers(
   immigrants: Immigrant[],
   sel: { origin?: string; settlement?: string },
 ): Immigrant[] {
-  const oTot = new Map<string, number>();
-  const sTot = new Map<string, number>();
-  for (const im of immigrants) {
-    inc(oTot, im.origin);
-    inc(sTot, im.settlement);
-  }
-  const originLabel = (im: Immigrant) =>
-    (oTot.get(im.origin) || 0) >= 10 ? im.origin : "Other origins";
-  const settleLabel = (im: Immigrant) =>
-    im.settlement.startsWith("(") || (sTot.get(im.settlement) || 0) >= 8
-      ? im.settlement
-      : "Other states";
+  const labels = migrationLabels(immigrants);
   return immigrants.filter(
     (im) =>
-      (sel.origin == null || originLabel(im) === sel.origin) &&
-      (sel.settlement == null || settleLabel(im) === sel.settlement),
+      (sel.origin == null || labels.origin(im.origin) === sel.origin) &&
+      (sel.settlement == null || labels.settlement(im.settlement) === sel.settlement),
   );
 }
 

@@ -1,37 +1,32 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
+import { useParams, Link, useSearchParams } from "react-router-dom";
 import { api } from "../api/client";
-import type { MapPayload, FanPayload, DeadendsPayload, DuplicatesPayload, Person } from "../api/types";
-import { AMERICAN, FilterState, defaultFilter, matchFilter } from "../lib/filter";
+import type { MapPayload, FanPayload, DeadendsPayload, DuplicatesPayload, Person, PersonRef } from "../api/types";
+import { AMERICAN, FilterState, defaultFilter, matchFilter, matchDecade, FILTER_KEYS, readFilter, writeFilter } from "../lib/filter";
 import { deriveInsights, deriveSankey, deriveGenComposition, sankeyMembers } from "../lib/insights";
-import { useMediaQuery, NARROW } from "../lib/useMediaQuery";
-import OriginsMap from "../viz/OriginsMap";
+import OriginsMap, { MapCamera } from "../viz/OriginsMap";
 import FanChart from "../viz/FanChart";
 import Sankey from "../viz/Sankey";
 import StatsPanel from "../viz/StatsPanel";
 import OriginBars from "../viz/OriginBars";
-import StateBreakdown from "../viz/StateBreakdown";
 import MapLegend from "../components/MapLegend";
-import Skeleton from "../components/Skeleton";
 import Filters from "../components/Filters";
 import TopNav from "../components/TopNav";
 import CountryModal from "../components/CountryModal";
 import PersonDrawer from "../components/PersonDrawer";
 import PersonModal from "../components/PersonModal";
 import TimeScrubber, { ScrubMode } from "../components/TimeScrubber";
+import { useFocusTrap } from "../lib/useFocusTrap";
+import { formatYear } from "../lib/year";
 
 type Tab = "map" | "fan" | "migration" | "insights";
 const TABS: Tab[] = ["map", "fan", "migration", "insights"];
 
-const SIDE_KEY = "ft_dash_side_w";
-const SIDE_DEFAULT = 480;
-const SIDE_MIN = 300;
+type PeopleList = { title: string; people: PersonRef[] };
 
 export default function DashboardPage() {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
-  const narrow = useMediaQuery(NARROW);
 
   // Each analysis endpoint loads independently so one slow/failed view never
   // blanks the others: the map (which also drives the sidebar + migration +
@@ -45,15 +40,27 @@ export default function DashboardPage() {
   const [deadendsErr, setDeadendsErr] = useState<string | null>(null);
   const [dups, setDups] = useState<DuplicatesPayload | null>(null);
 
-  const [filter, setFilter] = useState<FilterState | null>(null);
+  const filterKey = JSON.stringify(FILTER_KEYS.map((key) => params.get(key)));
+  const filter = useMemo(() => map ? readFilter(params, map.ranges) : null, [map, filterKey]);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filterRef = useRef<HTMLDivElement>(null);
+  useFocusTrap(filterRef, () => setFiltersOpen(false), filtersOpen);
+  const camera = useRef<MapCamera | undefined>(undefined);
+  const rememberCamera = useCallback((view: MapCamera) => { camera.current = view; }, []);
+  const lists = useRef(new Map<string, PeopleList>());
+  const listSequence = useRef(0);
+  const listId = params.get("list");
+  const personXref = params.get("person");
+  const focusXref = params.get("focus");
+  const fanFocus = useMemo(() => focusXref ? { xref: focusXref } : null, [focusXref]);
+  const applyFilters = useCallback((next: FilterState) => {
+    if (map) setParams((prev) => writeFilter(prev, next, map.ranges), { replace: true });
+  }, [map, setParams]);
   const [showArcs, setShowArcs] = useState(true);
   const [pinMode, setPinMode] = useState<"birth" | "death">("birth");
-  const [fanFocus, setFanFocus] = useState<{ xref: string } | null>(null);
   // Migration drill: a clicked Sankey node/ribbon -> the people behind it.
-  const [migSel, setMigSel] = useState<{ origin?: string; settlement?: string } | null>(null);
   // The person page (full detail + lineage). Layers over the migration drill when
   // opened from it; standalone otherwise (map pin, fan chart).
-  const [personXref, setPersonXref] = useState<string | null>(null);
   // time-scrubber state
   const [scrubMode, setScrubMode] = useState<ScrubMode>("off");
   const [decade, setDecade] = useState(0);
@@ -69,90 +76,29 @@ export default function DashboardPage() {
   // Country display names come from the map's geojson at click time; remember
   // them so a Back/forward that re-opens the modal still has a title.
   const countryNames = useRef<Record<string, string>>({});
+  const [countryLabels, setCountryLabels] = useState<Record<string, string>>({});
+  const rememberCountries = useCallback((names: Record<string, string>) => {
+    countryNames.current = names;
+    setCountryLabels(names);
+  }, []);
 
-  const selectTab = useCallback(
-    (k: Tab) => {
-      if (k === "fan") setFanFocus(null); // manual entry starts at the root, not a stale pin
-      // The person page + migration drill are overlays rendered outside any tab,
-      // so dismiss them on a nav switch (same reason `country` is dropped below).
-      setMigSel(null);
-      setPersonXref(null);
-      setParams(
-        (prev) => {
-          const next = new URLSearchParams(prev);
-          next.set("tab", k);
-          next.delete("country"); // the modal belongs to the map tab only
-          return next;
-        },
-        { replace: false },
-      );
-    },
-    [setParams],
-  );
-
-  // resizable sidebar (persisted); width drives the flex split with the map.
-  // Skipped on narrow screens, where the sidebar stacks full-width above the map.
-  const [sideW, setSideW] = useState<number>(() => {
-    const v = parseInt(localStorage.getItem(SIDE_KEY) || "", 10);
-    return Number.isNaN(v) ? SIDE_DEFAULT : v;
-  });
-  const dashRef = useRef<HTMLDivElement>(null);
-  const dragging = useRef(false);
-  const raf = useRef(0);
-
-  const clampW = useCallback(
-    (w: number) => Math.max(SIDE_MIN, Math.min(Math.round(window.innerWidth * 0.6), w)),
-    [],
-  );
-
-  useEffect(() => {
-    const onMove = (e: MouseEvent) => {
-      if (!dragging.current) return;
-      const left = dashRef.current?.getBoundingClientRect().left ?? 0;
-      const w = clampW(e.clientX - left);
-      if (raf.current) return;
-      raf.current = requestAnimationFrame(() => {
-        raf.current = 0;
-        setSideW(w);
-        // Leaflet listens to window resize -> re-measures the map as it shrinks/grows.
-        window.dispatchEvent(new Event("resize"));
-      });
-    };
-    const onUp = () => {
-      if (!dragging.current) return;
-      dragging.current = false;
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-      setSideW((w) => {
-        localStorage.setItem(SIDE_KEY, String(w));
-        return w;
-      });
-      window.dispatchEvent(new Event("resize"));
-    };
-    document.addEventListener("mousemove", onMove);
-    document.addEventListener("mouseup", onUp);
-    return () => {
-      document.removeEventListener("mousemove", onMove);
-      document.removeEventListener("mouseup", onUp);
-    };
-  }, [clampW]);
-
-  const startDrag = (e: React.MouseEvent) => {
-    e.preventDefault();
-    dragging.current = true;
-    document.body.style.userSelect = "none";
-    document.body.style.cursor = "col-resize";
-  };
-  const resetW = () => {
-    setSideW(SIDE_DEFAULT);
-    localStorage.setItem(SIDE_KEY, String(SIDE_DEFAULT));
-    window.dispatchEvent(new Event("resize"));
-  };
+  const selectTab = useCallback((k: Tab) => {
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("tab", k);
+      next.delete("country"); next.delete("person"); next.delete("list");
+      return next;
+    });
+  }, [setParams]);
 
   useEffect(() => {
     if (!id) return;
     let alive = true;
     setMap(null);
+    camera.current = undefined;
+    lists.current.clear();
+    setPlaying(false);
+    setFiltersOpen(false);
     setFan(null);
     setDeadends(null);
     setDups(null);
@@ -160,13 +106,6 @@ export default function DashboardPage() {
     setFanErr(null);
     setDeadendsErr(null);
 
-    const onAuthFail = (e: unknown): boolean => {
-      if ((e as { status?: number }).status === 401) {
-        navigate("/login");
-        return true;
-      }
-      return false;
-    };
     const msg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
     api
@@ -174,25 +113,24 @@ export default function DashboardPage() {
       .then((m) => {
         if (!alive) return;
         setMap(m);
-        setFilter(defaultFilter(m.ranges));
         setDecade(m.ranges.dec_hi);
       })
       .catch((e) => {
-        if (!alive || onAuthFail(e)) return;
+        if (!alive) return;
         setMapErr(msg(e));
       });
     api
       .fan(id)
       .then((f) => alive && setFan(f))
       .catch((e) => {
-        if (!alive || onAuthFail(e)) return;
+        if (!alive) return;
         setFanErr(msg(e));
       });
     api
       .deadends(id)
       .then((d) => alive && setDeadends(d))
       .catch((e) => {
-        if (!alive || onAuthFail(e)) return;
+        if (!alive) return;
         setDeadendsErr(msg(e));
       });
     // Optional card: a failure just leaves it hidden.
@@ -204,7 +142,7 @@ export default function DashboardPage() {
     return () => {
       alive = false;
     };
-  }, [id, navigate]);
+  }, [id]);
 
   // Time-scrubber playback: advance the decade until the latest, then stop.
   useEffect(() => {
@@ -251,34 +189,34 @@ export default function DashboardPage() {
       { replace: true },
     );
   }, [setParams]);
-  const viewInTree = useCallback(
-    (xref: string) => {
-      setFanFocus({ xref });
-      setParams(
-        (prev) => {
-          const next = new URLSearchParams(prev);
-          next.set("tab", "fan");
-          next.delete("country");
-          return next;
-        },
-        { replace: false },
-      );
-    },
-    [setParams],
-  );
-  // Open the full person page for anyone clicked across the app.
-  const openPerson = useCallback((xref: string) => setPersonXref(xref), []);
-  // "Open in fan chart" from a top-level modal: jump to the fan AND dismiss the
-  // modal/drawer, which (unlike the tab-scoped StatsPanel drawer) won't unmount
-  // on the tab switch on its own.
-  const openTree = useCallback(
-    (xref: string) => {
-      setMigSel(null);
-      setPersonXref(null);
-      viewInTree(xref);
-    },
-    [viewInTree],
-  );
+  const showPeople = useCallback((title: string, people: PersonRef[]) => {
+    const key = String(++listSequence.current);
+    lists.current.set(key, { title, people });
+    setParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.set("list", key); next.delete("person"); next.delete("country");
+      return next;
+    });
+  }, [setParams]);
+  const closeList = useCallback(() => setParams((prev) => {
+    const next = new URLSearchParams(prev); next.delete("list"); next.delete("person"); return next;
+  }, { replace: true }), [setParams]);
+  const openPerson = useCallback((xref: string) => setParams((prev) => {
+    const next = new URLSearchParams(prev); next.set("person", xref); return next;
+  }), [setParams]);
+  const closePerson = useCallback(() => setParams((prev) => {
+    const next = new URLSearchParams(prev); next.delete("person"); return next;
+  }, { replace: true }), [setParams]);
+  const viewInTree = useCallback((xref: string) => setParams((prev) => {
+    const next = new URLSearchParams(prev);
+    next.set("tab", "fan"); next.set("focus", xref);
+    next.delete("person"); next.delete("list"); next.delete("country");
+    return next;
+  }), [setParams]);
+  const rememberFocus = useCallback((xref: string) => setParams((prev) => {
+    if (prev.get("focus") === xref) return prev;
+    const next = new URLSearchParams(prev); next.set("focus", xref); return next;
+  }, { replace: true }), [setParams]);
 
   // One filtered person set drives every view -- the map pins, the selection bars,
   // the insights cards, and the migration flows all derive from it, so one control
@@ -304,12 +242,21 @@ export default function DashboardPage() {
     () => (map && filter ? map.immigrants.filter((im) => matchFilter(filter, im)) : []),
     [map, filter],
   );
+  // Per-generation ancestry composition for the fan side panel — whole-tree
+  // (unfiltered), so empty/untraced slots read as "unknown" rather than as
+  // "filtered out".
+  const genComposition = useMemo(
+    () => (fan ? deriveGenComposition(fan.recs, fan.root, fan.colors) : []),
+    [fan],
+  );
+
   // Insights cards + migration Sankey, derived client-side from the filtered set so
   // they track the filter instantly (web/src/lib/insights.ts). At the default
   // filter they equal the server's precomputed stats/sankey block.
   const insights = useMemo(
-    () => (map ? deriveInsights(fpeople, fimm, map.colors) : null),
-    [map, fpeople, fimm],
+    () => map ? { ...deriveInsights(fpeople, fimm, map.colors),
+      completeness: genComposition.filter((g) => g.gen > 0).map((g) => ({ gen: g.gen, known: g.known, expected: g.slots })) } : null,
+    [map, fpeople, fimm, genComposition],
   );
   const sankey = useMemo(() => (map ? deriveSankey(fimm, map.colors) : null), [map, fimm]);
 
@@ -319,18 +266,6 @@ export default function DashboardPage() {
     map?.people.forEach((p) => (m[p.xref] = p));
     return m;
   }, [map]);
-  // People behind a clicked Sankey node/ribbon, resolved through the same fold as
-  // the chart (so "Other origins"/"Other states" rollups return real people) and
-  // off the filtered immigrant set (so it tracks the active filter). Deduped by
-  // xref: under pedigree collapse one ancestor can immigrate on several lines.
-  const migPeople = useMemo(() => {
-    if (!migSel) return null;
-    const seen = new Set<string>();
-    return sankeyMembers(fimm, migSel).filter((im) =>
-      seen.has(im.xref) ? false : (seen.add(im.xref), true),
-    );
-  }, [fimm, migSel]);
-
   // Pedigree collapse + DNA lines are whole-tree graph walks the client can't
   // recompute, so they stay server-precomputed -- we only generation-cap them.
   const inGen = useCallback(
@@ -360,40 +295,9 @@ export default function DashboardPage() {
     [map],
   );
 
-  const scrubbedPts = useMemo(() => {
-    if (scrubMode === "off") return fpts;
-    return fpts.filter((p) => {
-      if (p.year == null) return false;
-      if (scrubMode === "born") return Math.floor(p.year / 10) * 10 <= decade;
-      // "alive": born by the end of this decade and not yet dead at its start
-      if (p.year > decade + 9) return false;
-      if (p.age == null) return true; // no recorded death -> assume still present
-      return p.year + p.age >= decade;
-    });
-  }, [fpts, scrubMode, decade]);
-
-  // Current-selection origin mix: bar width + label show the percentage of the
-  // selected direct line, with the raw headcount alongside (both, per request).
-  const liveBars = useMemo(() => {
-    const liveCount: Record<string, number> = {};
-    fpop.forEach((p) => (liveCount[p.nat] = (liveCount[p.nat] || 0) + 1));
-    const total = fpop.length || 1;
-    return Object.entries(liveCount)
-      .sort((a, b) => b[1] - a[1])
-      .map(([name, count]) => ({
-        name,
-        value: (100 * count) / total,
-        count,
-        color: map?.colors[name] || "#888",
-      }));
-  }, [fpop, map]);
-  // Per-generation ancestry composition for the fan side panel — whole-tree
-  // (unfiltered), so empty/untraced slots read as "unknown" rather than as
-  // "filtered out".
-  const genComposition = useMemo(
-    () => (fan ? deriveGenComposition(fan.recs, fan.root, fan.colors) : []),
-    [fan],
-  );
+  const scrubbedPts = useMemo(() => fpts.filter((p) => matchDecade(scrubMode, decade, p)), [fpts, scrubMode, decade]);
+  const omittedDates = useMemo(() => scrubMode === "off" ? 0 : fpts.filter((p) => p.year == null ||
+    (scrubMode === "alive" && (p.dyear == null || p.dyear < p.year))).length, [fpts, scrubMode]);
   const immBars = useMemo(
     () =>
       map
@@ -414,367 +318,150 @@ export default function DashboardPage() {
     () => (map ? Object.entries(map.state_counts).map(([name, count]) => ({ name, count })) : []),
     [map],
   );
-  // "By U.S. state" breakdown, shown when American (USA) is the selected country.
-  // Derived from the people matching every filter EXCEPT state, so picking one
-  // state doesn't collapse the list — every state stays visible and clickable
-  // (the bars double as the state picker). % is out of the full American direct
-  // total, with the unmatched remainder surfaced as an explicit unknown bucket.
-  const stateBreakdown = useMemo(() => {
-    if (!map || !filter || filter.country !== AMERICAN) return null;
-    const exceptState = { ...filter, state: "all" };
-    const byState: Record<string, number> = {};
-    let total = 0;
-    for (const p of map.people) {
-      if (!p.dir || p.gen === 0 || !matchFilter(exceptState, p)) continue;
-      total++;
-      if (p.st) byState[p.st] = (byState[p.st] || 0) + 1;
-    }
-    const rows = Object.entries(byState)
-      .sort((a, b) => b[1] - a[1] || (a[0] < b[0] ? -1 : 1))
-      .map(([name, count]) => ({ name, count, pct: total ? (100 * count) / total : 0 }));
-    const known = rows.reduce((s, r) => s + r.count, 0);
-    return { rows, unknown: total - known, total };
-  }, [map, filter]);
-  // Top origins (by mapped headcount) for the on-map legend.
   const legendItems = useMemo(() => {
-    if (!map) return [];
     const tally: Record<string, number> = {};
-    map.people.forEach((p) => {
-      if (p.lat != null) tally[p.nat] = (tally[p.nat] || 0) + 1;
-    });
-    return Object.entries(tally)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 8)
-      .map(([name]) => ({ name, color: map.colors[name] || "#888" }));
-  }, [map]);
+    scrubbedPts.forEach((p) => { tally[p.nat] = (tally[p.nat] || 0) + 1; });
+    return Object.entries(tally).sort((a, b) => b[1] - a[1]).slice(0, 8)
+      .map(([name]) => ({ name, color: map?.colors[name] || "#888" }));
+  }, [map, scrubbedPts]);
 
-  if (mapErr)
-    return (
-      <div className="center">
-        <div className="err">{mapErr}</div>
-        <p style={{ marginTop: 16 }}>
-          <Link to="/upload">← Try another file</Link> · <Link to="/">Your trees</Link>
-        </p>
-      </div>
-    );
-  if (!map || !filter)
-    return (
-      <div className="app">
-        <nav className="topnav">
-          <span className="navbrand">
-            <span className="navbrand-mark">🌳</span>
-            <span className="navbrand-text">Kinwhere</span>
-          </span>
-        </nav>
-        <div className={"dash" + (narrow ? " stacked" : "")}>
-          <div className="side" style={narrow ? undefined : { width: sideW }}>
-            <Skeleton w="55%" h={22} style={{ marginBottom: 16 }} />
-            <div className="kpis">
-              {[0, 1, 2, 3].map((i) => (
-                <Skeleton key={i} w={92} h={50} r={8} />
-              ))}
-            </div>
-            <Skeleton w="45%" h={12} style={{ margin: "20px 0 10px" }} />
-            {[0, 1, 2, 3, 4].map((i) => (
-              <Skeleton key={i} h={12} style={{ margin: "9px 0" }} />
-            ))}
-          </div>
-          <div className="main">
-            <div className="loading" style={{ textAlign: "center" }}>
-              Loading analysis…
-            </div>
-          </div>
-        </div>
-      </div>
-    );
+  if (mapErr) return <div className="center" role="alert">
+    <h1>We couldn’t load this tree</h1><p>{mapErr}</p>
+    <button onClick={() => window.location.reload()}>Retry</button> <Link to="/">Your saved trees</Link>
+  </div>;
+  if (!map || !filter) return <div className="loading" role="status">Loading your tree…</div>;
 
-  const changeScrubMode = (m: ScrubMode) => {
-    setScrubMode(m);
-    setPlaying(false);
-    if (m !== "off") setDecade(map.ranges.dec_lo);
-  };
-
-  const navItems = [
-    { key: "map", label: "🗺 Map" },
-    { key: "fan", label: "🌀 Fan chart" },
-    { key: "migration", label: "↗ Migration" },
-    { key: "insights", label: "📊 Insights" },
-  ];
-
+  const defaults = defaultFilter(map.ranges);
+  const chips: { label: string; clear: Partial<FilterState> }[] = [];
+  if (filter.branch !== "all") chips.push({ label: filter.branch === "P" ? "Father’s side" : "Mother’s side", clear: { branch: "all" } });
+  if (filter.country !== "all") chips.push({ label: filter.country, clear: { country: "all", state: "all" } });
+  if (filter.state !== "all") chips.push({ label: filter.state, clear: { state: "all" } });
+  if (filter.sex !== "all") chips.push({ label: filter.sex === "M" ? "Male records" : "Female records", clear: { sex: "all" } });
+  if (filter.dna !== "all") chips.push({ label: filter.dna === "Y" ? "Father → father" : "Mother → mother", clear: { dna: "all" } });
+  if (filter.genMin !== defaults.genMin || filter.genMax !== defaults.genMax) chips.push({ label: `Generations ${filter.genMin}–${filter.genMax}`, clear: { genMin: defaults.genMin, genMax: defaults.genMax } });
+  if (filter.yrMin !== defaults.yrMin || filter.yrMax !== defaults.yrMax) chips.push({ label: `Born ${formatYear(filter.yrMin)}–${formatYear(filter.yrMax)}`, clear: { yrMin: defaults.yrMin, yrMax: defaults.yrMax } });
+  const activePerson = personXref ? peopleByXref[personXref] : undefined;
+  const activeList = listId ? lists.current.get(listId) : undefined;
+  const unavailableList = !!listId && !activeList;
   const activeDetail = countryIso ? map.country_details[countryIso] : undefined;
   const activeName = countryIso ? countryNames.current[countryIso] || countryIso : "";
-  const hasCoords = map.meta.n_coords > 0;
+  const hasCountryData = Object.values(map.country_data).some((d) => d.count > 0);
+  const modeCoordinates = map.people.filter((p) => pinMode === "birth" ? p.lat != null : p.dlat != null).length;
+  const changeScrubMode = (mode: ScrubMode) => {
+    setScrubMode(mode); setPlaying(false);
+    if (mode !== "off") setDecade(map.ranges.dec_lo);
+  };
+  const migrationList = (selection: { origin?: string; settlement?: string }) => {
+    const people = [...new Map(sankeyMembers(fimm, selection).map((p) => [p.xref, p])).values()];
+    const title = selection.origin && selection.settlement ? `${selection.origin} → ${selection.settlement}`
+      : selection.origin ? `From ${selection.origin}` : `Settled in ${selection.settlement}`;
+    showPeople(title, people);
+  };
+  const exploreCountry = (iso: string) => showPeople(`People born in ${countryNames.current[iso] || iso} · whole tree`,
+    map.people.filter((p) => p.iso === iso && p.gen !== 0));
 
-  // Person page + migration drill (rendered at the dashboard root, over any tab).
-  const activePerson = personXref ? peopleByXref[personXref] : undefined;
-  const migTitle = !migSel
-    ? ""
-    : migSel.origin && migSel.settlement
-      ? `${migSel.origin} → ${migSel.settlement}`
-      : migSel.origin
-        ? `Immigrants from ${migSel.origin}`
-        : `Immigrants who settled in ${migSel.settlement}`;
-
-  return (
-    <div className="app">
-      <TopNav
-        items={navItems}
-        active={tab}
-        onSelect={(k) => selectTab(k as Tab)}
-        rootName={map.meta.root}
-      />
-      <div className={"dash" + (narrow ? " stacked" : "")} ref={dashRef}>
-        <div className="side" style={narrow ? undefined : { width: sideW }}>
-          <h1>{map.meta.root}</h1>
-          <div className="kpis">
-            <div className="kpi">
-              <b>{map.meta.n_direct.toLocaleString()}</b>
-              <span>direct ancestors</span>
-            </div>
-            <div className="kpi">
-              <b>{map.meta.max_gen}</b>
-              <span>generations</span>
-            </div>
-            <div className="kpi">
-              <b>{map.immigrant_count.toLocaleString()}</b>
-              <span>immigrants</span>
-            </div>
-            <div className="kpi">
-              <b>{map.meta.n_coords.toLocaleString()}</b>
-              <span>mapped</span>
-            </div>
-          </div>
-
-          {map.meta.living_count > 0 && (
-            <div className="sub" style={{ marginTop: 2 }}>
-              🔒 {map.meta.living_count} living{" "}
-              {map.meta.living_count === 1 ? "person" : "people"} · shown only to you, hidden from any
-              public view
-            </div>
-          )}
-
-          <h2>Origins · immigrant model</h2>
-          <div className="sub">Each line followed to the first ancestor who left the Old World.</div>
-          <OriginBars items={immBars} />
-          {map.models.immigrant.untraced_pct != null && (
-            <div className="sub" style={{ marginTop: 6 }}>
-              + {map.models.immigrant.untraced_pct}% untraced (origin not yet identified)
-            </div>
-          )}
-
-          {/* Filters narrow every view (map, insights, migration, fan), so they're
-              always available — not just on the map tab. */}
-          <h2>Filters</h2>
-          <Filters
-            filter={filter}
-            setFilter={setFilter}
-            countries={countries}
-            states={states}
-            ranges={map.ranges}
-            onReset={() => setFilter(defaultFilter(map.ranges))}
-          />
-
-          <h2>Current selection</h2>
-          <div className="sub">
-            {fpop.length.toLocaleString()} of {popTotal.toLocaleString()} direct ancestors ·{" "}
-            {fpts.length.toLocaleString()} map pins
-          </div>
-          <OriginBars items={liveBars} />
-
-          {stateBreakdown && (
-            <>
-              <h2>By U.S. state</h2>
-              <div className="sub">
-                Where your {stateBreakdown.total.toLocaleString()} American-born direct ancestors were
-                born. Click a state to filter every view to it.
-              </div>
-              <StateBreakdown
-                rows={stateBreakdown.rows}
-                unknown={stateBreakdown.unknown}
-                total={stateBreakdown.total}
-                selected={filter.state}
-                color={map.colors[AMERICAN] || "var(--accent)"}
-                onSelect={(st) => setFilter({ ...filter, state: st })}
-              />
-            </>
-          )}
-        </div>
-
-        {!narrow && (
-          <div
-            className="resizer"
-            onMouseDown={startDrag}
-            onDoubleClick={resetW}
-            title="Drag to resize · double-click to reset"
-          />
-        )}
-
-        <div className="main">
-          {tab === "map" && (
-            <div className="stagebar">
-              <span className="sub" style={{ display: "flex", alignItems: "center", gap: 6, margin: 0 }}>
-                Pins:
-                {(["birth", "death"] as const).map((m) => (
-                  <button
-                    key={m}
-                    className={pinMode === m ? "btn-primary" : ""}
-                    style={{ padding: "3px 9px" }}
-                    onClick={() => setPinMode(m)}
-                  >
-                    {m === "birth" ? "Birthplace" : "Place of death"}
-                  </button>
-                ))}
-              </span>
-              <label className="sub" style={{ display: "flex", alignItems: "center", gap: 6, margin: 0 }}>
-                <input type="checkbox" checked={showArcs} onChange={(e) => setShowArcs(e.target.checked)} />
-                migration arcs
-              </label>
-              <span className="sub" style={{ margin: 0 }}>
-                {pinMode === "birth"
-                  ? "Pins mark birthplaces. Click a shaded country for its full detail."
-                  : "Pins mark places of death (origin colors retained)."}
-              </span>
-            </div>
-          )}
-          <div className={"stage stage-" + tab}>
-            {tab === "map" &&
-              (hasCoords ? (
-                <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-                  <TimeScrubber
-                    ranges={map.ranges}
-                    mode={scrubMode}
-                    setMode={changeScrubMode}
-                    decade={decade}
-                    setDecade={setDecade}
-                    playing={playing}
-                    setPlaying={setPlaying}
-                    shown={scrubbedPts.length}
-                  />
-                  <div style={{ flex: 1, minHeight: 0, position: "relative" }}>
-                    <OriginsMap
-                      points={scrubbedPts}
-                      arcs={farcs}
-                      showArcs={showArcs}
-                      coordMode={pinMode}
-                      countryData={map.country_data}
-                      countryDetails={map.country_details}
-                      onCountry={onCountry}
-                      onViewTree={viewInTree}
-                      onPerson={openPerson}
-                    />
-                    <MapLegend origins={legendItems} />
-                  </div>
-                </div>
-              ) : (
-                <div className="empty-stage">
-                  <div className="empty-stage-inner">
-                    <div style={{ fontSize: 30, marginBottom: 8 }}>🗺</div>
-                    <h2 style={{ marginTop: 0 }}>No mappable birthplaces yet</h2>
-                    <p className="sub">
-                      None of the {map.meta.n_direct.toLocaleString()} direct ancestors in this tree have a
-                      birthplace we could resolve to coordinates. The fan chart and insights still work — or
-                      try a GEDCOM with more place data.
-                    </p>
-                  </div>
-                </div>
-              ))}
-            {tab === "fan" &&
-              (fanErr ? (
-                <TabError message={fanErr} />
-              ) : !fan ? (
-                <div className="loading">Loading fan chart…</div>
-              ) : fan.root ? (
-                <FanChart
-                  recs={fan.recs}
-                  root={fan.root}
-                  focus={fanFocus}
-                  filter={filter}
-                  genComposition={genComposition}
-                  onPerson={openPerson}
-                />
-              ) : (
-                <div className="loading">No fan data for this tree.</div>
-              ))}
-            {tab === "migration" && (
-              <div className="insights">
-                <h2 style={{ marginTop: 0 }}>Migration: origin → first New-World settlement</h2>
-                <div className="sub" style={{ maxWidth: 520 }}>
-                  Each immigrant ancestor flows from its Old-World origin (left) to the US state/region where their
-                  first American-born child was born (right). Ribbon width = number of ancestors.
-                </div>
-                <div className="sub">
-                  {fimm.length.toLocaleString()} of {map.immigrants.length.toLocaleString()} immigrant ancestors in
-                  the current filter. Click any flow or node to see the people behind it.
-                </div>
-                <Sankey data={sankey!} onPick={setMigSel} />
-              </div>
-            )}
-            {tab === "insights" && (
-              <StatsPanel
-                insights={insights!}
-                collapse={collapse!}
-                dna={dna!}
-                deadends={deadends}
-                deadendsError={deadendsErr}
-                duplicates={dups}
-                people={fpeople}
-                immigrants={fimm}
-                onViewTree={viewInTree}
-                onPerson={openPerson}
-              />
-            )}
-          </div>
-        </div>
+  return <div className="app explorer">
+    <TopNav items={[{ key: "map", label: "Map" }, { key: "fan", label: "Family tree" },
+      { key: "migration", label: "Migration" }, { key: "insights", label: "Research" }]}
+      active={tab} onSelect={(key) => selectTab(key as Tab)} />
+    <div className="explorer-header">
+      <div><h1>{map.meta.root || "Your tree"}</h1>
+        <p className="sub">{popTotal.toLocaleString()} ancestors · {map.meta.max_gen} generations</p>
       </div>
-
-      {countryIso && activeDetail && (
-        <CountryModal
-          iso={countryIso}
-          name={activeName}
-          detail={activeDetail}
-          datum={map.country_data[countryIso]}
-          colors={map.colors}
-          onClose={closeCountry}
-        />
-      )}
-
-      {/* Migration drill: the people behind a clicked Sankey node/ribbon. Hidden
-          (not unmounted) while a person page is layered over it. */}
-      {migSel && !activePerson && migPeople && (
-        <PersonDrawer
-          title={migTitle}
-          people={migPeople}
-          onClose={() => setMigSel(null)}
-          onViewTree={openTree}
-          onOpenPerson={openPerson}
-        />
-      )}
-
-      {/* The person page. `onBack` is present only when it opened over the
-          migration drill, so ✕/Esc closes everything but ← returns to the list. */}
-      {activePerson && (
-        <PersonModal
-          person={activePerson}
-          recs={fan?.recs ?? null}
-          root={fan?.root ?? null}
-          colors={map.colors}
-          onClose={() => {
-            setPersonXref(null);
-            setMigSel(null);
-          }}
-          onBack={migSel ? () => setPersonXref(null) : undefined}
-          onViewTree={openTree}
-          onOpenPerson={openPerson}
-        />
-      )}
+      <div className="explorer-actions">
+        <button aria-expanded={filtersOpen} aria-controls="explorer-filters" onClick={() => setFiltersOpen(true)}>Filters{chips.length ? ` (${chips.length})` : ""}</button>
+        <button className="btn-primary" onClick={() => showPeople("Find a person", map.people)}>Find a person</button>
+      </div>
     </div>
-  );
+    {chips.length > 0 && <div className="selection-toolbar">
+      <span className="selection-status" role="status">{fpop.length.toLocaleString()} of {popTotal.toLocaleString()} ancestors match</span>
+      {chips.map((chip) => <button key={chip.label} className="filter-chip" aria-label={`Clear ${chip.label} filter`}
+        onClick={() => applyFilters({ ...filter, ...chip.clear })}>{chip.label} ×</button>)}
+      <button className="linkbtn" onClick={() => applyFilters(defaults)}>Clear all</button>
+    </div>}
+    {unavailableList && !activePerson && <div className="list-notice" role="status">
+      This people list is no longer available after reloading or signing in. Select its country, route, or research hint again.
+      <button onClick={closeList}>Dismiss</button>
+      <button onClick={() => showPeople("Find a person", map.people)}>Find a person</button>
+    </div>}
+    <details className="ancestry-summary"><summary>Estimated family origins <span className="scope-label">Whole tree</span></summary>
+      <div className="ancestry-summary-body"><OriginBars items={immBars} />
+        <p className="sub">Each family line is followed to its first recorded ancestor from outside the New World. These are estimates from imported records, not DNA results. {map.models.immigrant.untraced_pct ?? 0}% of the model is unresolved. This summary stays the same when you filter.</p>
+      </div>
+    </details>
+    <main className="explorer-main">
+      {tab === "map" && <div className="stage stage-map">
+        <div className="stagebar">
+          <div className="pin-options" role="group" aria-label="Map locations">
+            {(["birth", "death"] as const).map((mode) => <button key={mode} aria-pressed={pinMode === mode}
+              className={pinMode === mode ? "selected-toggle" : ""} onClick={() => setPinMode(mode)}>{mode === "birth" ? "Birthplaces" : "Death places"}</button>)}
+          </div>
+          <label className="arc-toggle"><input type="checkbox" checked={showArcs} onChange={(e) => setShowArcs(e.target.checked)} /> Migration paths</label>
+          <select className="country-picker" aria-label="Explore country summaries" value="" onChange={(e) => { if (e.target.value) onCountry(e.target.value, countryLabels[e.target.value] || e.target.value); }}>
+            <option value="">Explore a country…</option>
+            {Object.keys(map.country_details).sort((a, b) => (countryLabels[a] || a).localeCompare(countryLabels[b] || b)).map((iso) =>
+              <option key={iso} value={iso}>{countryLabels[iso] || map.country_details[iso].nats.map(([n]) => n).join(" / ") || iso}</option>)}
+          </select>
+          {modeCoordinates > 0 && <TimeScrubber ranges={map.ranges} mode={scrubMode} setMode={changeScrubMode}
+            decade={decade} setDecade={setDecade} playing={playing} setPlaying={setPlaying} shown={scrubbedPts.length} omitted={omittedDates} />}
+        </div>
+        <div className="map-context">Pins: matching people{scrubMode !== "off" ? " and timeline" : ""}. Country shading: whole-tree birth records.</div>
+        <div className="map-surface">
+          <OriginsMap points={scrubbedPts} arcs={scrubMode === "off" ? farcs : []} showArcs={showArcs} coordMode={pinMode}
+            countryData={map.country_data} countryDetails={map.country_details} onCountry={onCountry}
+            onViewTree={viewInTree} onPerson={openPerson} initialCamera={camera.current} onCameraChange={rememberCamera} onCountryNames={rememberCountries} />
+          {scrubbedPts.length > 0 && <MapLegend origins={legendItems} />}
+          {!scrubbedPts.length && <aside className="map-empty" role="status">
+            <h2>{modeCoordinates ? "No matching map locations" : hasCountryData ? "Country overview" : "No mapped places in this file"}</h2>
+            <p>{modeCoordinates ? "No locations match these filters and timeline." : hasCountryData
+              ? `Your records include countries, but no map coordinates for ${pinMode === "birth" ? "birthplaces" : "places of death"}. Shaded countries are still available.`
+              : "Place names can be explored without coordinates. The family tree and research hints are available too."}</p>
+            <div className="empty-actions">
+              {chips.length > 0 && <button onClick={() => applyFilters(defaults)}>Clear filters</button>}
+              {scrubMode !== "off" && <button onClick={() => changeScrubMode("off")}>Turn timeline off</button>}
+              <button onClick={() => showPeople("People and recorded places", map.people)}>Browse recorded places</button>
+              <button onClick={() => selectTab("fan")}>View family tree</button>
+            </div>
+          </aside>}
+        </div>
+      </div>}
+      {tab === "fan" && <div className="stage stage-fan">
+        <p className="view-scope">Chart: the starting person’s pedigree. Matches are highlighted; the generation table covers the whole tree.</p>
+        {fanErr ? <TabError message={fanErr} /> : !fan ? <div className="loading" role="status">Loading family tree…</div>
+          : fan.root ? <FanChart recs={fan.recs} root={fan.root} focus={fanFocus} filter={filter} genComposition={genComposition}
+              onPerson={openPerson} onFocusChange={rememberFocus} /> : <div className="empty-state">No family relationships in this file.</div>}
+      </div>}
+      {tab === "migration" && <div className="stage stage-migration"><div className="insights">
+        <h2>Migration paths <span className="scope-label">Matching your filters</span></h2>
+        <p className="sub">Recorded origins to the first New-World settlement on each family line. Select a route to explore its people.</p>
+        <p>{fimm.length.toLocaleString()} of {map.immigrants.length.toLocaleString()} immigrant ancestors match.</p>
+        <Sankey data={sankey!} onPick={migrationList} />
+        {!fimm.length && <p className="sub">No migration paths match. Try clearing filters, or explore the family tree for records that do not fit this migration model.</p>}
+      </div></div>}
+      {tab === "insights" && <div className="stage stage-insights"><StatsPanel insights={insights!} collapse={collapse!} dna={dna!}
+        deadends={deadends} deadendsError={deadendsErr} duplicates={dups} people={fpeople} immigrants={fimm}
+        onViewTree={viewInTree} onPerson={openPerson} onShowPeople={showPeople} /></div>}
+    </main>
+    {filtersOpen && <div className="modal-backdrop filter-backdrop" onClick={() => setFiltersOpen(false)}>
+      <section ref={filterRef} id="explorer-filters" className="modal filter-panel" role="dialog" aria-modal="true" aria-labelledby="filter-title"
+        tabIndex={-1} onClick={(e) => e.stopPropagation()}>
+        <button className="modal-close" aria-label="Close filters" onClick={() => setFiltersOpen(false)}>×</button>
+        <h2 id="filter-title" className="modal-title">Filter people</h2>
+        <p className="sub">Narrow matching people, map pins, migration paths, and research lists. Whole-tree summaries stay unchanged.</p>
+        <Filters filter={filter} setFilter={applyFilters} countries={countries} states={states} ranges={map.ranges} onReset={() => applyFilters(defaults)} />
+        <button className="btn-primary filter-done" onClick={() => setFiltersOpen(false)}>Show {fpop.length.toLocaleString()} matching ancestors</button>
+      </section>
+    </div>}
+    {countryIso && activeDetail && !activePerson && !activeList && <CountryModal iso={countryIso} name={activeName} detail={activeDetail}
+      datum={map.country_data[countryIso]} colors={map.colors} onClose={closeCountry} onExplore={exploreCountry} />}
+    {activeList && <PersonDrawer key={listId} title={activeList.title} people={activeList.people} searchable
+      hidden={!!activePerson} onClose={closeList} onViewTree={viewInTree} onOpenPerson={openPerson} />}
+    {activePerson && <PersonModal person={activePerson} recs={fan?.recs ?? null} root={fan?.root ?? null} colors={map.colors}
+      onClose={closePerson} onBack={activeList ? closePerson : undefined} onViewTree={viewInTree} onOpenPerson={openPerson} />}
+  </div>;
 }
 
 function TabError({ message }: { message: string }) {
-  return (
-    <div className="insights">
-      <div className="err">Couldn’t load this view: {message}</div>
-    </div>
-  );
+  return <div className="insights"><div className="err" role="alert">Couldn’t load this view: {message}</div>
+    <button onClick={() => window.location.reload()}>Retry</button></div>;
 }

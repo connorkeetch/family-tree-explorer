@@ -11,6 +11,7 @@ const GEOURL = "/world-countries.geojson";
 const FS_URL = "https://www.familysearch.org/tree/person/details/";
 
 export type CoordMode = "birth" | "death";
+export interface MapCamera { center: [number, number]; zoom: number; }
 // Which coordinate + place + year a pin shows, per the birth/death toggle. Points
 // are pre-filtered by the dashboard to those that HAVE the active coordinate.
 function pin(p: Person, mode: CoordMode) {
@@ -56,17 +57,20 @@ function dominantColor(colors: Record<string, number>): string {
   return best;
 }
 
-function FitBounds({ map, points, coordMode }: { map: L.Map; points: Person[]; coordMode: CoordMode }) {
+function fitSelection(map: L.Map, points: Person[], coordMode: CoordMode) {
+  if (!points.length) return;
+  map.fitBounds(L.latLngBounds(points.map((p) => {
+    const c = pin(p, coordMode); return [c.lat, c.lon] as [number, number];
+  })), { padding: [30, 30], maxZoom: 8 });
+}
+
+function FitBounds({ map, points, coordMode, restored }: { map: L.Map; points: Person[]; coordMode: CoordMode; restored: boolean }) {
+  const fitted = useRef(false);
   useEffect(() => {
-    if (!points.length) return;
-    const bounds = L.latLngBounds(
-      points.map((p) => {
-        const c = pin(p, coordMode);
-        return [c.lat, c.lon] as [number, number];
-      }),
-    );
-    map.fitBounds(bounds, { padding: [30, 30], maxZoom: 8 });
-  }, [points, map, coordMode]);
+    if (fitted.current || restored || !points.length) return;
+    fitSelection(map, points, coordMode);
+    fitted.current = true;
+  }, [points, map, coordMode, restored]);
   return null;
 }
 
@@ -104,7 +108,7 @@ function personContent(p: Person, mode: CoordMode, actions?: {
   if (actions) {
     const controls = L.DomUtil.create("div", "pin-pop-actions", content);
     if (p.xref) {
-      for (const [label, act] of [["Details", actions.onPerson], ["Fan chart", actions.onViewTree]] as const) {
+      for (const [label, act] of [["Details", actions.onPerson], ["Family tree", actions.onViewTree]] as const) {
         const button = L.DomUtil.create("button", "btn", controls);
         button.type = "button";
         button.textContent = label;
@@ -229,7 +233,7 @@ function ClusteredMarkers({
           .on("click", () => map.setView([lat, lon], Math.min(index.getClusterExpansionZoom(cp.cluster_id), 16)));
       } else {
         const p = f.properties as Person;
-        marker = L.marker([lat, lon], { icon: dotIcon(p.color) })
+        marker = L.marker([lat, lon], { icon: dotIcon(p.color), title: p.name, alt: p.name })
           .bindTooltip(() => personContent(p, coordMode))
           .bindPopup(() => personContent(p, coordMode, actions.current));
       }
@@ -260,21 +264,25 @@ function CountryChoropleth({
   countryDetails,
   onCountry,
   onError,
+  onNames,
 }: {
   map: L.Map;
   countryData: Record<string, CountryDatum>;
   countryDetails: Record<string, CountryDetail>;
   onCountry: (iso: string, name: string) => void;
   onError?: () => void;
+  onNames?: (names: Record<string, string>) => void;
 }) {
   const dataRef = useRef(countryData);
   const detailRef = useRef(countryDetails);
   const onCountryRef = useRef(onCountry);
   const onErrorRef = useRef(onError);
+  const namesRef = useRef(onNames);
   dataRef.current = countryData;
   detailRef.current = countryDetails;
   onCountryRef.current = onCountry;
   onErrorRef.current = onError;
+  namesRef.current = onNames;
 
   useEffect(() => {
     let layer: L.GeoJSON | null = null;
@@ -290,6 +298,7 @@ function CountryChoropleth({
       })
       .then((gj) => {
         if (cancelled) return;
+        namesRef.current?.(Object.fromEntries(gj.features.map((feature: GeoJSON.Feature) => [String(feature.id), String(feature.properties?.name || feature.id)])));
         layer = L.geoJSON(gj as GeoJSON.GeoJsonObject, {
           style: (feature) => {
             const iso = feature ? String(feature.id) : "";
@@ -310,7 +319,7 @@ function CountryChoropleth({
             if (d) {
               const more = detailRef.current[iso] ? "<br><i>click for country detail →</i>" : "";
               lyr.bindTooltip(
-                `<b>${name}</b><br>${d.count} ancestor(s) born here<br>immigrant origin: ${d.immw}%${more}`,
+                `<b>${name}</b><br>${d.count} people born here<br>immigrant origin: ${d.immw}%${more}`,
                 { sticky: true },
               );
             }
@@ -349,6 +358,9 @@ function OriginsMap({
   onCountry,
   onViewTree,
   onPerson,
+  initialCamera,
+  onCameraChange,
+  onCountryNames,
 }: {
   points: Person[];
   arcs: Arc[];
@@ -359,18 +371,31 @@ function OriginsMap({
   onCountry: (iso: string, name: string) => void;
   onViewTree: (xref: string) => void;
   onPerson: (xref: string) => void;
+  initialCamera?: MapCamera;
+  onCameraChange?: (camera: MapCamera) => void;
+  onCountryNames?: (names: Record<string, string>) => void;
 }) {
   const [bordersError, setBordersError] = useState(false);
   const container = useRef<HTMLDivElement>(null);
   const [map, setMap] = useState<L.Map | null>(null);
   useEffect(() => {
-    const created = L.map(container.current!, { worldCopyJump: true }).setView([40, -40], 3);
+    const created = L.map(container.current!, { worldCopyJump: true }).setView(initialCamera?.center ?? [40, -40], initialCamera?.zoom ?? 3);
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a> · Made with Natural Earth',
     }).addTo(created);
     setMap(created);
-    return () => { created.remove(); };
+    const remember = () => {
+      if (!onCameraChange) return;
+      const center = created.getCenter();
+      onCameraChange({ center: [center.lat, center.lng], zoom: created.getZoom() });
+    };
+    if (onCameraChange) created.on("moveend zoomend", remember);
+    return () => {
+      remember();
+      if (onCameraChange) created.off("moveend zoomend", remember);
+      created.remove();
+    };
   }, []);
 
   // Arcs change independently of the clustered marker layer.
@@ -397,6 +422,7 @@ function OriginsMap({
           countryDetails={countryDetails}
           onCountry={onCountry}
           onError={() => setBordersError(true)}
+          onNames={onCountryNames}
         />
 
         <ClusteredMarkers
@@ -407,7 +433,8 @@ function OriginsMap({
           onPerson={onPerson}
         />
 
-        <FitBounds map={map} points={points} coordMode={coordMode} />
+        <FitBounds map={map} points={points} coordMode={coordMode} restored={!!initialCamera} />
+        <button className="map-fit" disabled={!points.length} onClick={() => fitSelection(map, points, coordMode)}>Fit selection</button>
       </>}
     </>
   );

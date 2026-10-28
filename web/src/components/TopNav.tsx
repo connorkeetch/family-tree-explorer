@@ -44,6 +44,7 @@ export default function TopNav({
             key={it.key}
             className={"navlink" + (active === it.key ? " on" : "")}
             onClick={() => onSelect(it.key)}
+            aria-current={active === it.key ? "page" : undefined}
           >
             {it.label}
           </button>
@@ -51,7 +52,7 @@ export default function TopNav({
       </div>
       {rootName && <span className="navroot">{rootName}</span>}
       <Link className="navlink navup" to="/upload">
-        ↑ New upload
+        Import tree
       </Link>
       {user && (
         <div className="navacct">

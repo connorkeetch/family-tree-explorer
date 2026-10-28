@@ -1,12 +1,12 @@
 import { useState, FormEvent } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Navigate, useLocation, useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 
 const FEATURES = [
-  { icon: "🗺", title: "Origins map", body: "See where every ancestral line was born, clustered across the world." },
-  { icon: "🌀", title: "Re-rootable fan chart", body: "Spin your pedigree out generation by generation, re-center on anyone." },
-  { icon: "↗", title: "Migration paths", body: "Trace each immigrant from the Old World to where they first settled." },
-  { icon: "🧭", title: "An honest read", body: "Exactly where each line goes cold — pull walls vs. true dead-ends." },
+  { icon: "🗺", title: "Origins map", body: "See recorded family birthplaces on a world map." },
+  { icon: "🌀", title: "Family tree", body: "Follow family relationships generation by generation, and center the tree on anyone." },
+  { icon: "↗", title: "Migration paths", body: "See where recorded immigrant ancestors came from and settled." },
+  { icon: "🧭", title: "Research hints", body: "Find missing people and places in the file you imported." },
 ];
 
 export default function LoginPage() {
@@ -18,8 +18,13 @@ export default function LoginPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
+  const location = useLocation();
+  const from = location.state?.from;
+  const returnTo = typeof from === "string" && from.startsWith("/") &&
+    !from.startsWith("//") && !/[\\\u0000-\u001f]/.test(from) && !/^\/login(?:[/?#]|$)/.test(from)
+    ? from : "/";
 
-  if (!loading && user) return <Navigate to="/" replace />;
+  if (!loading && user) return <Navigate to={returnTo} replace />;
 
   async function submit(e: FormEvent) {
     e.preventDefault();
@@ -28,9 +33,10 @@ export default function LoginPage() {
     try {
       if (mode === "login") await login(email, password);
       else await register(email, password, invite || undefined);
-      navigate("/");
+      navigate(returnTo, { replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
+    } finally {
       setBusy(false);
     }
   }
@@ -43,8 +49,8 @@ export default function LoginPage() {
           Explore the paths that brought you here.
         </p>
         <p>
-          Upload a GEDCOM and get an interactive map of your ancestry, a re-rootable fan chart, migration
-          paths, and an honest read on where each line goes cold.
+          Import a family tree file to explore a map of your ancestry, follow family relationships,
+          see migration paths, and find information to research next.
         </p>
         <div className="features">
           {FEATURES.map((f) => (
@@ -67,18 +73,25 @@ export default function LoginPage() {
 
       <div className="auth-card-wrap">
         <div className="card">
-          <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+          <h2>Local app account</h2>
+          <p className="auth-help sub">This account belongs to this Kinwhere installation. It is separate from FamilySearch.</p>
+          <p className="auth-first-time">First visit? Create an account to save and explore your trees.</p>
+          <div className="auth-mode-switch" style={{ display: "flex", gap: 6, marginBottom: 14 }}>
             <button
               className={mode === "login" ? "btn-primary" : ""}
               style={{ flex: 1 }}
-              onClick={() => setMode("login")}
+              disabled={busy}
+              aria-pressed={mode === "login"}
+              onClick={() => { setMode("login"); setError(null); }}
             >
               Sign in
             </button>
             <button
               className={mode === "register" ? "btn-primary" : ""}
               style={{ flex: 1 }}
-              onClick={() => setMode("register")}
+              disabled={busy}
+              aria-pressed={mode === "register"}
+              onClick={() => { setMode("register"); setError(null); }}
             >
               Create account
             </button>
@@ -94,6 +107,7 @@ export default function LoginPage() {
                 id="account-password"
                 type="password"
                 autoComplete={mode === "register" ? "new-password" : "current-password"}
+                minLength={mode === "register" ? 8 : undefined}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 required
@@ -114,11 +128,15 @@ export default function LoginPage() {
                 </details>
               </>
             )}
-            <button className="btn-primary" type="submit" disabled={busy} style={{ marginTop: 8, width: "100%" }}>
-              {busy ? "…" : mode === "login" ? "Sign in" : "Create account"}
+            <button className="btn-primary" type="submit" disabled={busy || loading} style={{ marginTop: 8, width: "100%" }}>
+              {loading ? "Checking account…" : busy ? "Please wait…" : mode === "login" ? "Sign in" : "Create account"}
             </button>
           </form>
-          {error && <div className="err">{error}</div>}
+          {error && <div className="err" role="alert">{error}</div>}
+          <details className="account-recovery">
+            <summary>Forgot your password?</summary>
+            <p className="sub">This installation sends no email, including password reset messages. The person running it can reset your local account password using Account recovery in the self-hosting guide. Your saved trees stay with your account.</p>
+          </details>
         </div>
       </div>
     </div>

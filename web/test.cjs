@@ -130,6 +130,7 @@ test("upload has a native keyboard-accessible file chooser", () => {
     ref: { click: () => clicks++ },
     "react-router-dom": { useNavigate: () => () => {}, Link: "a" },
     "../api/client": { api: {} }, "../components/ImportGuide": () => null,
+    "../lib/year": { formatYear: String },
   });
   const button = find(h.render(), (n) => n.type === "button" && n.props.children === "Choose GEDCOM files");
   assert.ok(button);

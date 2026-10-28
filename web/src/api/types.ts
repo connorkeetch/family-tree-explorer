@@ -25,6 +25,20 @@ export interface TreeMeta {
   total_sources: number;
   total_memories: number;
   living_count: number;
+  source_files?: string[];
+}
+
+export interface StartingPerson {
+  id: string;
+  name: string;
+  year: number | null;
+  place: string | null;
+}
+
+export interface ImportPreview {
+  people: StartingPerson[];
+  suggested_root: string | null;
+  candidate_count: number;
 }
 
 export interface TreeCreated {
@@ -59,6 +73,7 @@ export interface CountryDatum {
 export type Tally = [string, number];
 
 export interface CountryAncestor {
+  xref?: string;
   year: number;
   gen: number | null;
   name: string;
@@ -114,6 +129,7 @@ export interface Person {
   dir: boolean; // on the direct ancestral line
   year: number | null;
   age: number | null;
+  missing_parents?: number;
   src: number;
   mem: number;
   lat?: number;
@@ -217,6 +233,7 @@ export interface CollapseCouple {
 // Minimal shape the PersonDrawer renders + links from (both Person and Immigrant
 // satisfy it). xref -> fan tree (onViewTree); fid -> FamilySearch.
 export interface PersonRef {
+  place?: string | null;
   name: string;
   xref: string;
   fid: string | null;

@@ -29,6 +29,29 @@ network. An app account protects access within your installation; it is separate
 from your FamilySearch account. Registration is open on the local installation
 by default.
 
+## Account recovery
+
+Accounts belong to this installation, separate from FamilySearch. Kinwhere does
+not send email or password reset links. If you forget a password, the person
+running the installation can reset the existing account from its terminal:
+
+```sh
+docker compose exec app python -m api.reset_password person@example.com
+```
+
+Replace `person@example.com` with the account's email. Run this in the folder
+containing this installation's `compose.yaml`, and use the same Compose project
+name if you selected a different one. The command asks twice for the new
+password with hidden input; do not put the password in the command. Passwords
+must have at least eight characters. A missing account or mismatched password
+changes nothing. This keeps the account and all its saved trees.
+
+Existing browser sessions remain signed in after a password reset. On a shared
+installation, verify the account holder before resetting their password. This
+operator tool requires access to the installation; it is not an email recovery
+service. For a direct Python installation, use the same environment and
+`DATABASE_URL` as the app and run `python -m api.reset_password person@example.com`.
+
 ## Settings
 
 No `.env` file is required. To change settings, copy `.env.example` to `.env`,

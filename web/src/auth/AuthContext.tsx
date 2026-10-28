@@ -17,11 +17,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let active = true;
+    const clearUser = () => setUser(null);
+    window.addEventListener("kinwhere:unauthorized", clearUser);
     api
       .me()
-      .then(setUser)
-      .catch(() => setUser(null))
-      .finally(() => setLoading(false));
+      .then((value) => { if (active) setUser(value); })
+      .catch(() => { if (active) setUser(null); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => {
+      active = false;
+      window.removeEventListener("kinwhere:unauthorized", clearUser);
+    };
   }, []);
 
   const login = async (email: string, password: string) => {

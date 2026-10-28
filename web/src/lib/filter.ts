@@ -3,7 +3,7 @@
 // the insights cards, and the migration flows together — see
 // web/src/lib/insights.ts for the derivations that consume the filtered set.
 
-import type { Ranges } from "../api/types";
+import type { Person, Ranges } from "../api/types";
 
 // The nationality label for US-born ancestors (core emits exactly this string).
 // The by-state dropdown + breakdown only apply when this country is selected.
@@ -73,4 +73,47 @@ export function isFiltered(f: FilterState, ranges: Ranges): boolean {
     f.genMin !== ranges.gen_lo ||
     f.genMax !== ranges.gen_hi
   );
+}
+
+export const FILTER_KEYS = ["branch", "origin", "state", "sex", "line", "yearMin", "yearMax", "genMin", "genMax"];
+
+export function readFilter(params: URLSearchParams, ranges: Ranges): FilterState {
+  const f = defaultFilter(ranges);
+  const number = (key: string, fallback: number, lo: number, hi: number) => {
+    const raw = params.get(key);
+    const value = raw == null || raw.trim() === "" ? NaN : Number(raw);
+    return Number.isFinite(value) ? Math.max(lo, Math.min(hi, Math.round(value))) : fallback;
+  };
+  const branch = params.get("branch"), sex = params.get("sex"), dna = params.get("line");
+  if (branch === "P" || branch === "M") f.branch = branch;
+  if (sex === "M" || sex === "F") f.sex = sex;
+  if (dna === "Y" || dna === "mt") f.dna = dna;
+  f.country = params.get("origin") || "all";
+  f.state = f.country === AMERICAN ? params.get("state") || "all" : "all";
+  f.yrMin = number("yearMin", f.yrMin, ranges.yr_lo, ranges.yr_hi);
+  f.yrMax = Math.max(f.yrMin, number("yearMax", f.yrMax, ranges.yr_lo, ranges.yr_hi));
+  f.genMin = number("genMin", f.genMin, ranges.gen_lo, ranges.gen_hi);
+  f.genMax = Math.max(f.genMin, number("genMax", f.genMax, ranges.gen_lo, ranges.gen_hi));
+  return f;
+}
+
+export function writeFilter(params: URLSearchParams, filter: FilterState, ranges: Ranges): URLSearchParams {
+  const next = new URLSearchParams(params);
+  const defaults = defaultFilter(ranges);
+  const fields = { branch: "branch", origin: "country", state: "state", sex: "sex", line: "dna",
+    yearMin: "yrMin", yearMax: "yrMax", genMin: "genMin", genMax: "genMax" } as const;
+  for (const [key, field] of Object.entries(fields)) {
+    const value = filter[field as keyof FilterState];
+    if (value === defaults[field as keyof FilterState]) next.delete(key);
+    else next.set(key, String(value));
+  }
+  return next;
+}
+
+export function matchDecade(mode: "off" | "born" | "alive", decade: number,
+  person: Pick<Person, "year" | "dyear">): boolean {
+  if (mode === "off") return true;
+  if (person.year == null || person.year > decade + 9) return false;
+  if (mode === "born") return true;
+  return person.dyear != null && person.dyear >= person.year && person.dyear >= decade;
 }

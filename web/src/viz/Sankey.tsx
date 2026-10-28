@@ -38,7 +38,7 @@ export default function Sankey({
     b[1] - a[1] || (a[0] < b[0] ? -1 : 1);
   const left = Object.entries(oTot).sort(byDesc);
   const right = Object.entries(sTot).sort(byDesc);
-  const scale = 430 / total;
+  const scale = 320 / total;
 
   const stack = (items: [string, number][]): [Record<string, number>, number] => {
     const pos: Record<string, number> = {};
@@ -95,10 +95,11 @@ export default function Sankey({
   }
 
   return (
+    <div className="sankey-layout">
     <svg
       viewBox={`0 0 ${W} ${H.toFixed(0)}`}
       width="100%"
-      style={{ maxWidth: 460, display: "block" }}
+      style={{ maxWidth: 460, maxHeight: 380, display: "block" }}
       role="img"
       aria-label="Migration from origin to settlement"
     >
@@ -147,5 +148,34 @@ export default function Sankey({
         );
       })}
     </svg>
+      {onPick && (
+        <div className="sankey-browser">
+          <details open={flows.length <= 8} style={{ marginTop: 12 }}>
+            <summary>Browse migration routes</summary>
+            <ul>
+              {flows.map((f) => (
+                <li key={`${f.origin}->${f.settlement}`}>
+                  <button className="namelink" onClick={() => onPick({ origin: f.origin, settlement: f.settlement })}>
+                    {f.origin} → {f.settlement} · {f.count} {f.count === 1 ? "person" : "people"}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </details>
+          <details style={{ marginTop: 12 }}>
+            <summary>Browse origins and settlements</summary>
+            <p className="sub">Show everyone from an origin or in a settlement.</p>
+            <h3>Origins</h3>
+            <ul>{left.map(([origin, count]) => (
+              <li key={origin}><button className="namelink" onClick={() => onPick({ origin })}>{origin} · {count} people</button></li>
+            ))}</ul>
+            <h3>Settlements</h3>
+            <ul>{right.map(([settlement, count]) => (
+              <li key={settlement}><button className="namelink" onClick={() => onPick({ settlement })}>{settlement} · {count} people</button></li>
+            ))}</ul>
+          </details>
+        </div>
+      )}
+    </div>
   );
 }

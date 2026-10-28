@@ -12,6 +12,7 @@ export default function TimeScrubber({
   playing,
   setPlaying,
   shown,
+  omitted = 0,
 }: {
   ranges: Ranges;
   mode: ScrubMode;
@@ -21,19 +22,21 @@ export default function TimeScrubber({
   playing: boolean;
   setPlaying: (p: boolean) => void;
   shown: number;
+  omitted?: number;
 }) {
   if (!ranges.has_years) return null;
   return (
-    <div className="scrubber">
+    <div className={`scrubber${mode === "off" ? "" : " timeline-active"}`}>
       <select
         value={mode}
         onChange={(e) => setMode(e.target.value as ScrubMode)}
         style={{ width: "auto" }}
         title="Animate pins by time"
+        aria-label="Show map pins over time"
       >
         <option value="off">🕑 Time: off</option>
-        <option value="born">Born by decade (fill up)</option>
-        <option value="alive">Alive in decade</option>
+        <option value="born">Born by this decade</option>
+        <option value="alive">Recorded lifetimes</option>
       </select>
 
       {mode !== "off" && (
@@ -42,11 +45,13 @@ export default function TimeScrubber({
             onClick={() => setPlaying(!playing)}
             style={{ padding: "5px 10px" }}
             title={playing ? "Pause" : "Play"}
+            aria-label={playing ? "Pause timeline" : "Play timeline"}
           >
             {playing ? "❚❚" : "▶"}
           </button>
           <input
             type="range"
+            aria-label="Map decade"
             min={ranges.dec_lo}
             max={ranges.dec_hi}
             step={10}
@@ -57,9 +62,10 @@ export default function TimeScrubber({
             }}
             style={{ flex: 1, accentColor: "var(--accent)" }}
           />
-          <span className="cnt" style={{ minWidth: 130, textAlign: "right" }}>
+          <span className="scrub-status">
             {formatDecade(decade)} · {shown.toLocaleString()} shown
           </span>
+          {omitted > 0 && <span className="scrub-note">{omitted.toLocaleString()} omitted: {mode === "alive" ? "birth or death dates unknown" : "birth dates unknown"}.</span>}
         </>
       )}
     </div>
