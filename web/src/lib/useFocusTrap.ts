@@ -1,4 +1,4 @@
-import { useEffect, RefObject } from "react";
+import { useEffect, useRef, RefObject } from "react";
 
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
@@ -9,18 +9,21 @@ const FOCUSABLE =
  * focus to the previously-focused element on close. The container should carry
  * tabIndex={-1} so it can receive initial focus when it has no focusable child.
  */
-export function useFocusTrap(ref: RefObject<HTMLElement | null>, onEscape?: () => void) {
+export function useFocusTrap(ref: RefObject<HTMLElement | null>, onEscape?: () => void, active = true) {
+  const escape = useRef(onEscape);
+  escape.current = onEscape;
   useEffect(() => {
+    if (!active) return;
     const node = ref.current;
     const previouslyFocused = document.activeElement as HTMLElement | null;
-    if (node) {
+    if (node && !node.contains(document.activeElement)) {
       const first = node.querySelector<HTMLElement>(FOCUSABLE);
       (first ?? node).focus();
     }
 
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        onEscape?.();
+        escape.current?.();
         return;
       }
       if (e.key !== "Tab" || !node) return;
@@ -47,7 +50,9 @@ export function useFocusTrap(ref: RefObject<HTMLElement | null>, onEscape?: () =
     document.addEventListener("keydown", onKey);
     return () => {
       document.removeEventListener("keydown", onKey);
-      previouslyFocused?.focus?.();
+      if (!document.activeElement || document.activeElement === document.body || node?.contains(document.activeElement)) {
+        previouslyFocused?.focus?.();
+      }
     };
-  }, [ref, onEscape]);
+  }, [ref, active]);
 }

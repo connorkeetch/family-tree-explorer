@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import type { PersonRef } from "../api/types";
 import { formatYear } from "../lib/year";
 import { AiMark } from "./AiOrigin";
+import { useFocusTrap } from "../lib/useFocusTrap";
 
 // A person's FamilySearch profile (matches the map pin + fan chart deep link).
 const FS_URL = "https://www.familysearch.org/tree/person/details/";
@@ -22,6 +23,8 @@ export default function PersonDrawer({
   onClose,
   onViewTree,
   onOpenPerson,
+  hidden = false,
+  searchable = people.length > 12,
 }: {
   title: string;
   people: PersonRef[];
@@ -30,26 +33,25 @@ export default function PersonDrawer({
   // When provided, a person's name becomes a button that opens their full
   // person page (layered over this list). Omit to keep names as plain text.
   onOpenPerson?: (xref: string) => void;
+  hidden?: boolean;
+  searchable?: boolean;
 }) {
   const [q, setQ] = useState("");
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    document.addEventListener("keydown", onKey);
-    return () => document.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  const ref = useRef<HTMLDivElement>(null);
+  useFocusTrap(ref, onClose, !hidden);
 
   const filtered = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return needle ? people.filter((p) => p.name.toLowerCase().includes(needle)) : people;
+    return needle ? people.filter((p) => p.name.toLowerCase().includes(needle) ||
+      p.place?.toLowerCase().includes(needle)) : people;
   }, [people, q]);
   const shown = filtered.slice(0, CAP);
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
+    <div className="modal-backdrop" hidden={hidden} style={hidden ? { display: "none" } : undefined} onClick={onClose}>
       <div
+        ref={ref}
+        tabIndex={-1}
         className="modal"
         role="dialog"
         aria-modal="true"
@@ -64,11 +66,12 @@ export default function PersonDrawer({
           {people.length.toLocaleString()} {people.length === 1 ? "person" : "people"}
         </div>
 
-        {people.length > 12 && (
+        {searchable && (
           <input
             type="text"
             className="drill-search"
-            placeholder="Search by name…"
+            placeholder="Search people or places…"
+            aria-label="Search people or places"
             value={q}
             onChange={(e) => setQ(e.target.value)}
             autoFocus
@@ -99,6 +102,7 @@ export default function PersonDrawer({
                   {p.nat ? ` · ${p.nat}` : ""}
                   <AiMark ai={p.ai} />
                 </span>
+                {p.place && <span className="sub" style={{ display: "block" }}>Birthplace: {p.place}</span>}
               </span>
               <span className="drill-actions">
                 <button

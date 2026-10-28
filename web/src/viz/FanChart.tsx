@@ -52,6 +52,7 @@ export default function FanChart({
   filter,
   genComposition,
   onPerson,
+  onFocusChange,
 }: {
   recs: Record<string, FanRec>;
   root: string;
@@ -67,13 +68,15 @@ export default function FanChart({
   // Open the full person page for a wedge. Wedge clicks still re-center (dive);
   // this powers the side-panel "Full details" button for the centered person.
   onPerson?: (xref: string) => void;
+  onFocusChange?: (xref: string) => void;
 }) {
   // The data and filters set the ceiling; the position budget can lower it.
   const maxRings = Object.values(recs).reduce((m, r) => Math.max(m, r.gen ?? 0), 3);
   const ringCeiling = Math.max(3, Math.min(maxRings, filter.genMax));
 
-  const focused = focus?.xref && recs[focus.xref] ? focus.xref : null;
-  const [center, setCenter] = useState(focused ?? root);
+  const focused = focus?.xref && recs[focus.xref] ? focus.xref : root;
+  const [center, setCenter] = useState(focused);
+  const [selectedPerson, setSelectedPerson] = useState(focused);
   const [rings, setRings] = useState(Math.min(8, ringCeiling));
   const [history, setHistory] = useState<string[]>([]);
   const budget = useMemo(() => layoutFan(recs, center, ringCeiling), [recs, center, ringCeiling]);
@@ -83,16 +86,16 @@ export default function FanChart({
   useEffect(() => {
     setRings((r) => Math.min(r, budget.rings));
   }, [budget.rings]);
+  useEffect(() => setSelectedPerson(center), [center]);
 
   // Country/state/sex/DNA/birth-year/generation filter -> dim non-matching wedges
   // (you can't drop a parent from a pedigree, so highlight rather than hide).
   const matches = (r: FanRec) =>
     matchFilter(filter, { br: r.br, nat: r.nat, st: r.st, sex: r.s, dna: r.dna, year: r.y, gen: r.gen });
 
-  // Re-center when an external focus arrives (also covers the case where the
-  // chart stays mounted across focus changes). A fresh focus object is required.
+  // A parent echo of an internal focus change must preserve the chart's Back stack.
   useEffect(() => {
-    if (focused) {
+    if (focused !== center) {
       setCenter(focused);
       setHistory([]);
     }
@@ -108,17 +111,19 @@ export default function FanChart({
     if (x === center) return;
     setHistory((h) => [...h, center]);
     setCenter(x);
+    onFocusChange?.(x);
   }
   function back() {
-    setHistory((h) => {
-      if (!h.length) return h;
-      setCenter(h[h.length - 1]);
-      return h.slice(0, -1);
-    });
+    const previous = history[history.length - 1];
+    if (!previous) return;
+    setCenter(previous);
+    setHistory(history.slice(0, -1));
+    onFocusChange?.(previous);
   }
   function reset() {
     setCenter(root);
     setHistory([]);
+    onFocusChange?.(root);
   }
 
   const labels: JSX.Element[] = [];
@@ -149,20 +154,22 @@ export default function FanChart({
   }
 
   const sub =
-    center === root ? "you are here" : c.gen != null ? `gen ${c.gen} back` : "centered here";
+    center === root ? "starting person" : c.gen != null ? `gen ${c.gen} back` : "centered here";
 
   return (
     <div className="fan">
       <div className="fan-side">
         <h2 style={{ marginTop: 0 }}>Centered on</h2>
-        <div style={{ fontSize: 16, fontWeight: 600 }}>{c.n}</div>
+        <div style={{ fontSize: 16, fontWeight: 600 }}>
+          {onPerson ? <button className="namelink" onClick={() => onPerson(center)}>{c.n}</button> : c.n}
+        </div>
         <div className="cnt">
-          {c.y ? `b. ${c.y}` : "birth unknown"}
+          {c.y != null ? `b. ${c.y}` : "birth unknown"}
           {c.p ? ` · ${c.p}` : ""}
         </div>
         {c.gen != null && (
           <div className="sub" style={{ marginTop: 4 }}>
-            {c.gen} generation{c.gen === 1 ? "" : "s"} back from you
+            {c.gen} generation{c.gen === 1 ? "" : "s"} from the starting person
           </div>
         )}
         {c.est && (
@@ -175,7 +182,7 @@ export default function FanChart({
           <button onClick={back} disabled={!history.length}>
             ← Back
           </button>
-          <button onClick={reset}>Reset to me</button>
+          <button onClick={reset}>Reset to starting person</button>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {onPerson && (
@@ -190,11 +197,12 @@ export default function FanChart({
           )}
         </div>
         <div className="field" style={{ marginTop: 16 }}>
-          <span>
+          <label htmlFor="fan-rings">
             Rings: {displayRings}
             {ringCeiling < maxRings ? ` · capped at gen ${ringCeiling} by the filter` : ""}
-          </span>
+          </label>
           <input
+            id="fan-rings"
             type="range"
             min={3}
             max={budget.rings}
@@ -208,10 +216,21 @@ export default function FanChart({
             Click a wedge to explore that branch further.</p>
         )}
         <p className="sub" style={{ marginTop: 12 }}>
-          Click any wedge to re-center and read its names. Gray empty wedges are
-          unknown ancestors — where a line dead-ends. The generation table covers
+          Select a wedge or choose a person below to center that branch. Gray empty wedges are
+          ancestors missing from this file. The generation table covers
           the whole tree even when the chart's depth is limited.
         </p>
+        <label className="field">
+          <span>Choose a person in this chart</span>
+          <select value={selectedPerson} onChange={(e) => setSelectedPerson(e.target.value)}>
+            {[...new Set(filled.map((nd) => nd.x))].map((xref) => (
+              <option key={xref} value={xref}>
+                {recs[xref].n}{recs[xref].y != null ? ` · b. ${recs[xref].y}` : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button onClick={() => dive(selectedPerson)} disabled={selectedPerson === center}>Show this branch</button>
 
         {genComposition && genComposition.length > 0 && (
           <>
@@ -230,6 +249,8 @@ export default function FanChart({
           viewBox={`${-R} ${-R} ${2 * R} ${2 * R}`}
           preserveAspectRatio="xMidYMid meet"
           style={{ width: "100%", height: "100%", display: "block" }}
+          role="img"
+          aria-label={`Family tree centered on ${c.n}. Use the person selector to explore the same people with a keyboard.`}
         >
           {gaps
             .filter((gp) => gp.g <= displayRings)

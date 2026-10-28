@@ -2,8 +2,8 @@
 
 Explore the paths that brought you here.
 
-Explore a GEDCOM family tree with an ancestry map, a re-rootable fan chart,
-migration flows, and research insights. Run your own copy on your computer.
+Explore a GEDCOM family tree with an ancestry map, family relationships,
+migration paths, and research hints. Run your own copy on your computer.
 
 **MIT licensed. No invitation, subscription, FamilySearch password, or AI key is
 required to run the app.**
@@ -25,6 +25,9 @@ required to run the app.**
 4. Open **[http://localhost:8000](http://localhost:8000)** and create an app account.
 5. Choose **Try an example tree**, or **Import my family tree** with a GEDCOM
    (`.ged`) export from your genealogy software.
+6. To import, choose your file and select **Find starting person**. Search by
+   name, birth year, or birthplace, confirm whose ancestors to explore, then
+   select **Import tree**.
 
 The first build can take several minutes. No `.env` file is needed. Accounts,
 trees, and the generated session secret are kept in a persistent Docker volume.
@@ -37,10 +40,13 @@ sharing them.
 
 ## What you can explore
 
-- **Origins map:** clustered birth/death places, countries, and migration arcs.
-- **Fan chart:** follow selected parent relationships and re-center on anyone.
+- **Map:** explore recorded birthplaces, death places, countries, and migration paths.
+- **Family tree:** follow family relationships and center the tree on anyone.
 - **Migration:** see where recorded immigrant ancestors came from and settled.
-- **Insights:** missing ancestry, repeated ancestors, surnames, and research hints.
+- **Research:** find missing people and places, repeated ancestors, and records to check.
+- **Find a person:** search names or recorded birthplaces across the tree, open
+  person details, or view their family relationships. Recorded places remain
+  searchable when they cannot be placed on the map.
 - **Optional AI:** map unclear places and suggest duplicate records or parent
   claims, with visible uncertainty labels.
 

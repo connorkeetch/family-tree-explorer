@@ -7,7 +7,7 @@ import { useState } from "react";
  * small screens.
  */
 export default function MapLegend({ origins }: { origins: { name: string; color: string }[] }) {
-  const [open, setOpen] = useState(true);
+  const [open, setOpen] = useState(false);
   if (!origins.length) return null;
 
   return (
@@ -25,7 +25,7 @@ export default function MapLegend({ origins }: { origins: { name: string; color:
             </div>
           ))}
           <div className="maplegend-head" style={{ marginTop: 8 }}>
-            Shading · ancestors born
+            Shading · birth records
           </div>
           <div className="maplegend-ramp">
             <span className="maplegend-ramp-bar" />

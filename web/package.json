@@ -6,7 +6,7 @@
   "type": "module",
   "scripts": {
     "prebuild": "node scripts/licenses.cjs",
-    "test": "node --test test.cjs",
+    "test": "node --test test.cjs *.test.cjs",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview"

@@ -23,7 +23,7 @@ export default function Filters({
   return (
     <div>
       <div className="field">
-        <span>Branch</span>
+        <span id="branch-label">Family side</span>
         <div style={{ display: "flex", gap: 6 }}>
           {(["all", "P", "M"] as const).map((b) => (
             <button
@@ -31,8 +31,9 @@ export default function Filters({
               className={filter.branch === b ? "btn-primary" : ""}
               style={{ flex: 1, padding: "6px 0" }}
               onClick={() => set({ branch: b })}
+              aria-pressed={filter.branch === b}
             >
-              {b === "all" ? "All" : b === "P" ? "Paternal" : "Maternal"}
+              {b === "all" ? "Both sides" : b === "P" ? "Father’s side" : "Mother’s side"}
             </button>
           ))}
         </div>
@@ -57,8 +58,9 @@ export default function Filters({
       )}
 
       <div className="field">
-        <span>Country of birth</span>
+        <label htmlFor="filter-country">Country / origin in records</label>
         <select
+          id="filter-country"
           value={filter.country}
           onChange={(e) => {
             const country = e.target.value;
@@ -78,8 +80,8 @@ export default function Filters({
 
       {filter.country === AMERICAN && states.length > 0 && (
         <div className="field">
-          <span>State of birth</span>
-          <select value={filter.state} onChange={(e) => set({ state: e.target.value })}>
+          <label htmlFor="filter-state">State of birth</label>
+          <select id="filter-state" value={filter.state} onChange={(e) => set({ state: e.target.value })}>
             <option value="all">any state</option>
             {states.map((s) => (
               <option key={s.name} value={s.name}>
@@ -90,21 +92,23 @@ export default function Filters({
         </div>
       )}
 
-      <div style={{ display: "flex", gap: 10 }}>
+      <details className="advanced-filters">
+        <summary>More filters</summary>
+      <div className="filter-extra">
         <div className="field" style={{ flex: 1 }}>
-          <span>Sex</span>
-          <select value={filter.sex} onChange={(e) => set({ sex: e.target.value as FilterState["sex"] })}>
+          <label htmlFor="filter-sex">Sex in record</label>
+          <select id="filter-sex" value={filter.sex} onChange={(e) => set({ sex: e.target.value as FilterState["sex"] })}>
             <option value="all">any</option>
             <option value="M">male</option>
             <option value="F">female</option>
           </select>
         </div>
         <div className="field" style={{ flex: 1 }}>
-          <span>DNA line</span>
-          <select value={filter.dna} onChange={(e) => set({ dna: e.target.value as FilterState["dna"] })}>
+          <label htmlFor="filter-line">Direct family line</label>
+          <select id="filter-line" value={filter.dna} onChange={(e) => set({ dna: e.target.value as FilterState["dna"] })}>
             <option value="all">any</option>
-            <option value="Y">Y (patrilineal)</option>
-            <option value="mt">mt (matrilineal)</option>
+            <option value="Y">Father → father (Y line)</option>
+            <option value="mt">Mother → mother (mt line)</option>
           </select>
         </div>
       </div>
@@ -125,6 +129,7 @@ export default function Filters({
           />
         </div>
       )}
+      </details>
 
       <button onClick={onReset} style={{ marginTop: 4 }}>
         Reset filters

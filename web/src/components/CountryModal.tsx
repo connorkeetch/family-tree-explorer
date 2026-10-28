@@ -22,6 +22,7 @@ export default function CountryModal({
   datum,
   colors,
   onClose,
+  onExplore,
 }: {
   iso: string;
   name: string;
@@ -29,6 +30,7 @@ export default function CountryModal({
   datum: CountryDatum | undefined;
   colors: Colors;
   onClose: () => void;
+  onExplore: (iso: string) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   useFocusTrap(ref, onClose);
@@ -80,12 +82,15 @@ export default function CountryModal({
             </span>
           ))}
         </div>
-        <div className="sub">All direct-line ancestors born here — independent of the filters on the left.</div>
+        <div className="sub"><b>Whole tree.</b> Countries inferred from imported birth records; this summary does not narrow with filters.</div>
+        <button className="btn-primary" onClick={() => onExplore(iso)} style={{ marginTop: 14 }}>
+          Explore people born here
+        </button>
 
         <div className="kpis">
           <div className="kpi">
             <b>{detail.total.toLocaleString()}</b>
-            <span>ancestors born here</span>
+            <span>people born here</span>
           </div>
           <div className="kpi">
             <b>{(datum?.immw ?? 0).toFixed(1)}%</b>

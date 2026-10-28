@@ -84,15 +84,15 @@ export default function PersonModal({
   const sexLabel = p.sex === "M" ? "Male" : p.sex === "F" ? "Female" : null;
   const genLabel =
     p.gen === 0
-      ? "this is you"
+      ? "starting person"
       : p.gen != null
         ? `${p.gen} generation${p.gen === 1 ? "" : "s"} back`
         : p.dir
-          ? "on your direct line"
+          ? "on the starting person’s direct line"
           : "relative";
   const side =
-    p.br === "P" ? "Paternal side" : p.br === "M" ? "Maternal side" : null;
-  const quadrant = GP_SIDE[p.gp] ? `your ${GP_SIDE[p.gp]}` : null;
+    p.br === "P" ? "Father’s side" : p.br === "M" ? "Mother’s side" : null;
+  const quadrant = GP_SIDE[p.gp] ? `${GP_SIDE[p.gp]} of the starting person` : null;
 
   const badges: { label: string; cls: string }[] = [];
   if (p.imm) badges.push({ label: "Immigrant ancestor", cls: "pm-badge-imm" });
@@ -105,7 +105,7 @@ export default function PersonModal({
   if (p.year != null) kpis.push({ value: formatYear(p.year), label: "born" });
   if (p.dyear != null) kpis.push({ value: formatYear(p.dyear), label: "died" });
   if (p.age != null) kpis.push({ value: `${p.age} yrs`, label: "lifespan" });
-  if (p.gen != null) kpis.push({ value: `gen ${p.gen}`, label: "from you" });
+  if (p.gen != null) kpis.push({ value: `gen ${p.gen}`, label: "from starting person" });
 
   // Fact rows — label/value pairs, present-only.
   const facts: { k: string; v: React.ReactNode }[] = [];
@@ -202,7 +202,7 @@ export default function PersonModal({
 
         <div className="pm-actions">
           <button className="btn-primary" onClick={() => onViewTree(p.xref)}>
-            🌀 Open in fan chart
+            Open in family tree
           </button>
           {p.fid && (
             <a className="btn" href={FS_URL + p.fid} target="_blank" rel="noopener noreferrer">
@@ -220,11 +220,11 @@ export default function PersonModal({
           ))}
         </dl>
 
-        <h2 className="modal-sec">How you're related</h2>
+        <h2 className="modal-sec">Relationship to the starting person</h2>
         {lineage && lineage.length > 1 ? (
           <>
             <div className="sub">
-              {lineage.length - 1} generation{lineage.length - 1 === 1 ? "" : "s"} — from you up to{" "}
+              {lineage.length - 1} generation{lineage.length - 1 === 1 ? "" : "s"} — from the starting person to{" "}
               {p.name.split(" ")[0] || "them"}.
             </div>
             <ol className="lineage">
@@ -234,7 +234,7 @@ export default function PersonModal({
                   ? step.rel === "father"
                     ? "Father"
                     : "Mother"
-                  : "You";
+                  : "Starting person";
                 const yr = linYear(step.xref);
                 return (
                   <li
@@ -260,13 +260,13 @@ export default function PersonModal({
             </ol>
           </>
         ) : lineage && lineage.length === 1 ? (
-          <div className="sub">This is you — the root of the tree.</div>
+          <div className="sub">This is the starting person for this analysis.</div>
         ) : recs ? (
           <div className="sub">
-            Not on your traced direct line — no lineage path to you in this tree.
+            This record is outside the starting person’s traced ancestral line.
           </div>
         ) : (
-          <div className="sub">Lineage loads with the fan chart…</div>
+          <div className="sub">Relationship paths load with the family tree…</div>
         )}
       </div>
     </div>

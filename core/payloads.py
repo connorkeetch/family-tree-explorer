@@ -210,6 +210,9 @@ def map_payload(people):
             "dna": dna_of.get(xref, ""),
             "imm": xref in immigrant_xref, "dir": bool(p.get("on_direct_line")),
             "year": p.get("birth_year"), "age": _age_at_death(p),
+            "dyear": p.get("death_year"),
+            "missing_parents": sum(not parent for parent in ao.parent_slots(p)),
+            "place": place or p.get("birth_place"), "dplace": p.get("death_place"),
             "src": p.get("source_count", 0) or 0, "mem": p.get("memory_count", 0) or 0,
         }
         # US state of birth, for the by-state breakdown + filter (only when the

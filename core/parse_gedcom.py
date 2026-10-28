@@ -544,10 +544,12 @@ class Model:
 # ---------------------------------------------------------------------------
 
 def resolve_root(model, root_arg, files_first_indi=None):
-    """Resolve the root *identity* from --root (a FID or an @xref@) or, failing
+    """Resolve the root *identity* from --root (an identity or an @xref@) or, failing
     that, the descendant-most person (has parents, is nobody's parent)."""
     if root_arg:
         arg = root_arg.strip()
+        if arg in model.nodes:
+            return arg
         if FID_RE.match(arg):
             # by FID
             for ident, fid in model.fid.items():
@@ -557,9 +559,22 @@ def resolve_root(model, root_arg, files_first_indi=None):
         # legacy @xref@: interpret against the FIRST file's xrefs
         if files_first_indi and arg in files_first_indi:
             return identity_of(files_first_indi[arg], 0)
-        sys.exit("Root %s not found. Pass a FamilySearch ID like XXXX-XXX." % arg)
+        sys.exit("Starting person %s was not found in these files. Choose a person from the preview again." % arg)
 
-    # heuristic: someone who is a child but never a parent
+    candidates = root_candidates(model)
+    if len(candidates) == 1:
+        return candidates[0]
+    if model.submitter:
+        for ident in candidates:
+            node = model.nodes.get(ident)
+            nm = node.first("NAME") if node else None
+            if nm and parse_name(nm.value)[2].lower() == model.submitter.lower():
+                return ident
+    return min(candidates, key=lambda i: model.fid.get(i) or i, default=None)
+
+
+def root_candidates(model):
+    """Descendant-most people, or all people when there are no such children."""
     is_parent = set()
     for (father, mother) in model.couples:
         if father:
@@ -570,17 +585,7 @@ def resolve_root(model, root_arg, files_first_indi=None):
     for kids in model.couples.values():
         is_child |= kids
     candidates = [i for i in model.nodes if i in is_child and i not in is_parent]
-    if len(candidates) == 1:
-        return candidates[0]
-    if model.submitter:
-        for ident in (candidates or model.nodes):
-            node = model.nodes.get(ident)
-            nm = node.first("NAME") if node else None
-            if nm and parse_name(nm.value)[2].lower() == model.submitter.lower():
-                return ident
-    if candidates:
-        return sorted(candidates, key=lambda i: model.fid.get(i) or i)[0]
-    return next(iter(sorted(model.nodes)), None)
+    return candidates or list(model.nodes)
 
 
 def compute_generations(root, model):
@@ -609,7 +614,8 @@ def assign_xrefs(model, root):
     return {ident: "@I%d@" % (n + 1) for n, ident in enumerate(ordered)}
 
 
-def build_people(paths, root_arg=None, overrides=None):
+def load_model(paths, overrides=None):
+    """Shared parsing and merge boundary for import and starting-person preview."""
     files = [build_index(parse_records(p)) for p in paths]
     model = Model()
     for i, (indi, fam, submitter) in enumerate(files):
@@ -617,8 +623,26 @@ def build_people(paths, root_arg=None, overrides=None):
     if overrides:
         model.apply_overrides(overrides)
     model.finalize()
+    return model, files[0][0] if files else None
 
-    root = resolve_root(model, root_arg, files_first_indi=files[0][0] if files else None)
+
+def preview_people(paths):
+    """List stable identities without running analysis or retaining uploaded files."""
+    model, _first_indi = load_model(paths)
+    people = []
+    for ident, node in model.nodes.items():
+        name = node.first("NAME") if node else None
+        fact = (extract_fact(node, "BIRT") or extract_fact(node, "CHR") or {}) if node else {}
+        people.append({"id": ident, "name": parse_name(name.value)[2] if name else "Unnamed person",
+                       "year": fact.get("year"), "place": fact.get("place")})
+    return {"people": people, "suggested_root": resolve_root(model, None),
+            "candidate_count": len(root_candidates(model))}
+
+
+def build_people(paths, root_arg=None, overrides=None):
+    model, first_indi = load_model(paths, overrides)
+
+    root = resolve_root(model, root_arg, files_first_indi=first_indi)
     gen = compute_generations(root, model)
     xref = assign_xrefs(model, root)
 

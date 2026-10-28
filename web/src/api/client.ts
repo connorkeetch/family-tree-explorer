@@ -8,17 +8,35 @@ import type {
   DeadendsPayload,
   DuplicatesPayload,
   UserOut,
+  ImportPreview,
 } from "./types";
 
 const BASE = "/api";
 
 async function json<T>(url: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(url, { credentials: "include", ...init });
+  let res: Response;
+  try {
+    res = await fetch(url, { credentials: "include", ...init });
+  } catch {
+    throw new Error("Could not connect to this installation. Check that it is running, then try again.");
+  }
   if (!res.ok) {
-    let detail = res.statusText;
+    const expired = res.status === 401 && !url.startsWith(`${BASE}/auth/`) && url !== `${BASE}/health`;
+    if (expired) window.dispatchEvent(new Event("kinwhere:unauthorized"));
+    let detail = expired ? "Your sign-in has expired. Sign in again to continue." :
+      res.statusText || "The request could not be completed. Please try again.";
     try {
       const body = await res.json();
-      detail = body.detail ?? detail;
+      if (!expired && typeof body.detail === "string") detail = body.detail;
+      else if (!expired && Array.isArray(body.detail)) {
+        const messages = body.detail.flatMap((issue: { loc?: unknown[]; msg?: unknown }) => {
+          if (!issue || typeof issue.msg !== "string") return [];
+          const field = Array.isArray(issue.loc) ? issue.loc.filter((part) =>
+            typeof part === "string" && part !== "body").join(" · ") : "";
+          return [field ? `${field}: ${issue.msg}` : issue.msg];
+        });
+        if (messages.length) detail = messages.join(". ");
+      }
     } catch {
       /* non-JSON error body */
     }
@@ -28,7 +46,11 @@ async function json<T>(url: string, init: RequestInit = {}): Promise<T> {
     err.status = res.status;
     throw err;
   }
-  return (await res.json()) as T;
+  try {
+    return (await res.json()) as T;
+  } catch {
+    throw new Error("Could not read the response from this installation. Please try again.");
+  }
 }
 
 function postJson<T>(url: string, body: unknown): Promise<T> {
@@ -53,6 +75,11 @@ export const api = {
   // trees
   listTrees: () => json<TreeSummary[]>(`${BASE}/trees`),
   deleteTree: (id: string) => json<{ ok: boolean }>(`${BASE}/trees/${id}`, { method: "DELETE" }),
+  preview: (files: File[]) => {
+    const fd = new FormData();
+    files.forEach((f) => fd.append("files", f));
+    return json<ImportPreview>(`${BASE}/trees/preview`, { method: "POST", body: fd });
+  },
   upload: (files: File[], root?: string) => {
     const fd = new FormData();
     files.forEach((f) => fd.append("files", f));

@@ -37,10 +37,11 @@ export default function StateBreakdown({
       {rows.map((r) => {
         const active = selected === r.name;
         return (
-          <div
+          <button
+            type="button"
             key={r.name}
             className={`row rowclick${active ? " row-active" : ""}`}
-            role="button"
+            style={{ width: "100%", textAlign: "left" }}
             aria-pressed={active}
             onClick={() => onSelect(active ? "all" : r.name)}
             title={active ? `Clear the ${r.name} filter` : `Filter ancestors to ${r.name}`}
@@ -52,7 +53,7 @@ export default function StateBreakdown({
             <span className="pct">
               {r.count.toLocaleString()} · {r.pct.toFixed(0)}%
             </span>
-          </div>
+          </button>
         );
       })}
       {unknown > 0 && (

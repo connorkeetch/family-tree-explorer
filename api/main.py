@@ -3,6 +3,7 @@ import logging
 import os
 import shutil
 import tempfile
+from contextlib import asynccontextmanager
 from functools import lru_cache
 from pathlib import Path
 
@@ -18,7 +19,7 @@ import core
 from core.duplicates import find_duplicates
 from core.jev import Jev
 from core.parents import settle
-from core.parse_gedcom import build_people
+from core.parse_gedcom import build_people, preview_people
 from core.resolve_places import enrich
 
 from . import store
@@ -26,7 +27,7 @@ from .auth import current_user, router as auth_router
 from .config import https_only, session_secret
 from .db import SessionLocal, get_db, init_db
 from .models import User
-from .schemas import TreeCreated
+from .schemas import ImportPreview, TreeCreated
 
 # Cap the merged upload size. Default 512 MiB comfortably fits the full real
 # tree (~147k people ≈ 366 MB); override with MAX_UPLOAD_MB for larger pulls.
@@ -90,7 +91,8 @@ def _people_or_404(db: Session, user: User, tree_id: str) -> list[dict]:
     return people
 
 
-def _import_tree(paths: list[str], root: str | None, owner_id: int) -> dict:
+def _import_tree(paths: list[str], root: str | None, owner_id: int,
+                 source_files: list[str]) -> dict:
     try:
         people, _root_xref, _model = build_people(paths, root)
     except (SystemExit, Exception) as exc:
@@ -100,7 +102,17 @@ def _import_tree(paths: list[str], root: str | None, owner_id: int) -> dict:
     _enrich(people)
     # Parsing, JSON serialization and the session stay on the worker thread.
     with SessionLocal() as db:
-        return store.create_tree(db, owner_id, people)
+        return store.create_tree(db, owner_id, people, source_files)
+
+
+def _preview_tree(paths: list[str]) -> dict:
+    try:
+        preview = preview_people(paths)
+    except (SystemExit, Exception) as exc:
+        raise HTTPException(status_code=400, detail=f"could not parse GEDCOM: {exc}") from exc
+    if not preview["people"]:
+        raise HTTPException(status_code=400, detail="No people found. Choose a GEDCOM export containing individual records.")
+    return preview
 
 
 @app.get("/api/health")
@@ -108,16 +120,9 @@ def health() -> dict:
     return {"status": "ok"}
 
 
-@app.post("/api/trees", response_model=TreeCreated)
-async def create_tree(
-    files: list[UploadFile] = File(...),
-    root: str | None = Form(default=None),
-    user: User = Depends(current_user),
-) -> dict:
-    """Parse + merge uploaded GEDCOM(s) and store the result against this user.
-
-    Raw uploads are parsed then discarded; only the structured people list is kept.
-    """
+@asynccontextmanager
+async def _uploaded_paths(files: list[UploadFile]):
+    """Stream either import request within the same size and cleanup boundary."""
     tmpdir = Path(tempfile.mkdtemp(prefix="ged_"))
     paths: list[str] = []
     total = 0
@@ -141,10 +146,33 @@ async def create_tree(
             paths.append(str(dest))
         if not paths:
             raise HTTPException(status_code=400, detail="no files uploaded")
-        return await anyio.to_thread.run_sync(
-            _import_tree, paths, (root or "").strip() or None, user.id)
+        yield paths
     finally:
         shutil.rmtree(tmpdir, ignore_errors=True)
+
+
+@app.post("/api/trees/preview", response_model=ImportPreview)
+async def preview_tree(
+    files: list[UploadFile] = File(...),
+    user: User = Depends(current_user),
+) -> dict:
+    """Read starting-person choices without saving a tree or keeping raw files."""
+    async with _uploaded_paths(files) as paths:
+        return await anyio.to_thread.run_sync(_preview_tree, paths)
+
+
+@app.post("/api/trees", response_model=TreeCreated)
+async def create_tree(
+    files: list[UploadFile] = File(...),
+    root: str | None = Form(default=None),
+    user: User = Depends(current_user),
+) -> dict:
+    """Parse + merge uploaded GEDCOM(s), storing only their structured records."""
+    async with _uploaded_paths(files) as paths:
+        names = [(f.filename or "Unnamed GEDCOM").replace("\\", "/").rsplit("/", 1)[-1]
+                 for f in files]
+        return await anyio.to_thread.run_sync(
+            _import_tree, paths, (root or "").strip() or None, user.id, names)
 
 
 @app.get("/api/trees")
@@ -167,7 +195,8 @@ def export_tree(
 ) -> JSONResponse:
     """Owner-only data export: the full structured tree as a JSON download."""
     people = _people_or_404(db, user, tree_id)
-    payload = {"meta": core.tree_meta(people), "people": people}
+    payload = {"meta": {**core.tree_meta(people), **store.source_files(db, user.id, tree_id)},
+               "people": people}
     return JSONResponse(
         payload,
         headers={"Content-Disposition": f'attachment; filename="tree-{tree_id}.json"'},
@@ -176,7 +205,8 @@ def export_tree(
 
 @app.get("/api/trees/{tree_id}/meta")
 def get_meta(tree_id: str, user: User = Depends(current_user), db: Session = Depends(get_db)) -> dict:
-    return core.tree_meta(_people_or_404(db, user, tree_id))
+    return {**core.tree_meta(_people_or_404(db, user, tree_id)),
+            **store.source_files(db, user.id, tree_id)}
 
 
 @app.get("/api/trees/{tree_id}/origins")

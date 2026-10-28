@@ -6,6 +6,14 @@ import ConfirmDialog from "../components/ConfirmDialog";
 import Skeleton from "../components/Skeleton";
 import type { TreeSummary } from "../api/types";
 
+function importedDate(tree: TreeSummary) {
+  if (!tree.created_at) return "date unavailable";
+  const value = tree.created_at;
+  const date = new Date(/(?:Z|[+-]\d{2}:\d{2})$/i.test(value) ? value : `${value}Z`);
+  return Number.isNaN(date.getTime()) ? "date unavailable" :
+    date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "medium" });
+}
+
 export default function LandingPage() {
   const { user, logout } = useAuth();
   const [trees, setTrees] = useState<TreeSummary[] | null>(null);
@@ -14,13 +22,16 @@ export default function LandingPage() {
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [exampleBusy, setExampleBusy] = useState(false);
   const [exampleError, setExampleError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const navigate = useNavigate();
 
   async function refresh() {
+    setLoadError(null);
+    setTrees(null);
     try {
       setTrees(await api.listTrees());
-    } catch {
-      setTrees([]);
+    } catch (e) {
+      setLoadError(e instanceof Error ? e.message : "Could not load your trees. Please try again.");
     }
   }
   useEffect(() => {
@@ -87,8 +98,13 @@ export default function LandingPage() {
       <p className="sub">The example is a fictional family with made-up names and dates.</p>
       {exampleError && <div className="err" role="alert">{exampleError}</div>}
 
-      {trees === null ? (
-        <div className="card">
+      {loadError ? (
+        <div className="card err" role="alert">
+          <p>{loadError}</p>
+          <button onClick={refresh}>Retry</button>
+        </div>
+      ) : trees === null ? (
+        <div className="card library-loading" role="status" aria-label="Loading your trees">
           {[0, 1, 2].map((i) => (
             <div className="row" key={i} style={{ justifyContent: "space-between" }}>
               <Skeleton w="55%" h={14} />
@@ -97,28 +113,31 @@ export default function LandingPage() {
           ))}
         </div>
       ) : trees.length === 0 ? (
-        <div className="card sub">Start with the example, or import a GEDCOM file from your genealogy app.</div>
+        <div className="card empty-state"><h2>No trees yet</h2><p className="sub">Start with the example, or import a GEDCOM file from your genealogy app.</p></div>
       ) : (
-        <div className="card">
+        <div className="tree-library">
           {trees.map((t) => (
-            <div className="row" key={t.id} style={{ justifyContent: "space-between" }}>
-              <Link to={`/tree/${t.id}`} style={{ flex: 1 }}>
-                {t.meta.root || "(unnamed)"}{" "}
-                <span className="cnt">
-                  · {t.meta.n_direct.toLocaleString()} ancestors · gen {t.meta.max_gen}
-                </span>
-              </Link>
-              <a
-                className="btn"
-                href={`/api/trees/${t.id}/export`}
-                style={{ padding: "3px 8px", marginRight: 6 }}
-              >
-                Download analysis (JSON)
-              </a>
-              <button onClick={() => { setDeleteError(null); setPendingDelete(t); }} style={{ padding: "3px 8px" }}>
-                Delete
-              </button>
-            </div>
+            <article className="card tree-card" key={t.id}>
+              <div className="tree-card-summary">
+                <h2>{t.meta.root || "Unnamed tree"}</h2>
+                <p className="sub">{Math.max(0, t.meta.n_direct - (t.meta.root_xref ? 1 : 0)).toLocaleString()} ancestors · {t.meta.max_gen} generations</p>
+                <p className="sub tree-created">Imported {importedDate(t)}</p>
+                {!!t.meta.source_files?.length && <p className="sub tree-file-list">Files: {t.meta.source_files.join(", ")}</p>}
+              </div>
+              <div className="tree-card-actions">
+                <Link className="btn btn-primary" to={`/tree/${t.id}`} aria-label={`Open tree for ${t.meta.root || "unnamed tree"}, imported ${importedDate(t)}`}>
+                  Open tree →
+                </Link>
+                <details>
+                  <summary>More actions</summary>
+                  <a className="btn" href={`/api/trees/${t.id}/export`}>Download analysis (JSON)</a>
+                  <button aria-label={`Delete ${t.meta.root || "unnamed tree"}, imported ${importedDate(t)} (${t.id})`}
+                    onClick={() => { setDeleteError(null); setPendingDelete(t); }}>
+                    Delete tree
+                  </button>
+                </details>
+              </div>
+            </article>
           ))}
         </div>
       )}
@@ -130,7 +149,7 @@ export default function LandingPage() {
       {pendingDelete && (
         <ConfirmDialog
           title="Delete this tree?"
-          message={`“${pendingDelete.meta.root || "(unnamed)"}” and its analysis will be permanently removed. This can't be undone.`}
+          message={`“${pendingDelete.meta.root || "Unnamed tree"}”, imported ${importedDate(pendingDelete)}, and its analysis will be permanently removed. This can't be undone.`}
           confirmLabel={deleting ? "Deleting…" : "Delete tree"}
           danger
           error={deleteError}
